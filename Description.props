@@ -51,7 +51,7 @@ For optimal performance on Windows, you need to copy native matrix library dll-f
 Unzip this file to Wekas install dir: https://github.com/amten/NeuralNetwork/archive/BLAS_dlls_0.1.zip \
 \
 For Linux, native matrix library files have not been tested, \
-though it should be possible to install using instructions given here: https://github.com/fommil/netlib-java/
+though it should be possible to install using instructions given here: https://github.com/fommil/netlib-java#linux
 
 # Prevent package from being loaded by Weka if the named
 # files/directories are not present (relative to the package's
