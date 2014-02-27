@@ -1,0 +1,86 @@
+# Template Description file for a Weka package
+# 
+
+# Package name (required)
+PackageName=NeuralNetwork
+
+# Version (required)
+Version=0.1
+
+#Date (year-month-day)
+Date=2014-02-26
+
+# Title (required)
+Title=Neural Network
+
+# Category (recommended)
+Category=Classification, Regression
+
+# Author (required)
+Author=Johannes Amtén <johannes_amten@hotmail.com>
+
+# Maintainer (required)
+Maintainer=Johannes Amtén <johannes_amten@hotmail.com>
+
+# License (required)
+License=Free to copy and modify. Please include author name if you copy code.
+
+# Description (required)
+Description=A neural network implementation with dropout and rectified linear units.
+
+# Package URL for obtaining the package archive (required)
+PackageURL=https://github.com/amten/NeuralNetwork
+
+# URL for further information
+URL=https://github.com/amten/NeuralNetwork
+
+# Enhances various other packages ?
+# Enhances=packageName1,packageName2,...
+
+# Related to other packages?
+# Related=packageName1,packageName2,...
+
+# Dependencies (format: packageName (equality/inequality version_number)
+Depends=weka (>=3.7.1)
+
+# Message to display in installation. Can be used to provide
+# special instructions (e.g. manual stuff needed to complete
+# the installation process). (optional).
+MessageToDisplayOnInstallation=Important! \
+For optimal performance on Windows, you need to copy native matrix library dll-files to the install dir of Weka (".../Program Files/Weka-3-7") \
+Unzip this file to Wekas install dir: https://github.com/amten/NeuralNetwork/archive/BLAS_dlls_0.1.zip \
+\
+For Linux, native matrix library files have not been tested, \
+though it should be possible to install using instructions given here: https://github.com/fommil/netlib-java/
+
+# Prevent package from being loaded by Weka if the named
+# files/directories are not present (relative to the package's
+# root directory). Useful for packages that require the user
+# to manually install some third-party library(s). (optional)
+#DoNotLoadIfFileNotPresent=lib/someLibrary.jar,otherStuff/important,...
+
+# Log message to be displayed if package can't be loaded due to
+# missing files/directories. (optional)
+# DoNotLoadIfFileNotPresentMessage=funkyPackage can't be loaded because some \
+# funky libraries are missing. Please download funkyLibrary.jar from \
+# http://www.funky.com and install in $WEKA_HOME/packages/funkyPackage/lib
+
+# Prevent package from being loaded by Weka if the named
+# classes can't be instantiated. Useful for packages that rely
+# on stuff that has to be installed manually (an example is
+# Java3D, which installs itself into the system JRE/JDK. (optional)
+#DoNotLoadIfClassNotPresent=com.some.class.from.some.Where,org.some.other.Class,...
+
+# Log message to be displayed if package can't be loaded due to 
+# missing classes. (optional).
+#DoNotLoadIfClassNotPresentMessage=funkyPackage can't be loaded because \
+# com.funky.FunkyClass can't be instantiated. Have you downloaded and run \
+# the funky software installer for your platform?
+
+# Prevent package from being loaded by Weka if one or more (comma-separated)
+# environment variables or java properties are not set. (optional).
+#DoNotLoadIfEnvVarNotSet=
+
+# Log message to be displayed if package can't be loaded due to unset
+# environment variables or java properties.
+#DoNotLoadIfEnvVarNotSetMessage=
