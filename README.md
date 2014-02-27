@@ -5,10 +5,11 @@ Java neural network implementation with plugin for [WEKA] (http://www.cs.waikato
 
 ## Installation
 
-In WEKA, go to Tools/Package Manager and press the "File/URL" button. Enter "https://github.com/amten/NeuralNetwork/archive/NeuralNetwork_0.1.zip" and press "ok.
+Go to https://github.com/amten/NeuralNetwork/releases/latest to find the latest release. Download the files NeuralNetwork.zip and BLAS-dlls.zip. 
+In WEKA, go to Tools/Package Manager and press the "File/URL" button. Browse to the NeuralNetwork.zip file and press "ok".
 
-**Important!** For optimal performance on Windows, you need to copy native matrix library dll-files to the install dir of Weka (".../Program Files/Weka-3-7").
-Unzip this file to Wekas install dir: https://github.com/amten/NeuralNetwork/archive/BLAS_dlls_0.1.zip
+**Important!** For optimal performance on Windows, you need to copy native matrix library dll-files to Wekas install dir.
+Unzip the BLAS-dlls.zip file to Wekas install dir (".../Program Files/Weka-3-7").
 
 For Linux, native matrix library files have not been tested, though it should be possible to install using instructions given [here] (https://github.com/fommil/netlib-java#linux)
 

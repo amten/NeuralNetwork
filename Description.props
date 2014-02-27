@@ -47,8 +47,9 @@ Depends=weka (>=3.7.1)
 # special instructions (e.g. manual stuff needed to complete
 # the installation process). (optional).
 MessageToDisplayOnInstallation=Important! \
-For optimal performance on Windows, you need to copy native matrix library dll-files to the install dir of Weka (".../Program Files/Weka-3-7") \
-Unzip this file to Wekas install dir: https://github.com/amten/NeuralNetwork/archive/BLAS_dlls_0.1.zip \
+For optimal performance on Windows, you need to copy native matrix library dll-files to Wekas install dir. \
+Go to https://github.com/amten/NeuralNetwork/releases/latest and download the BLAS-dlls.zip file. \
+Unzip the BLAS-dlls.zip file to Wekas install dir (".../Program Files/Weka-3-7"). \
 \
 For Linux, native matrix library files have not been tested, \
 though it should be possible to install using instructions given here: https://github.com/fommil/netlib-java#linux
