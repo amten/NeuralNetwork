@@ -14,27 +14,102 @@ import java.util.concurrent.Future;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * Created by Johannes Amtén on 2014-02-24.
+ * Neural network implementation with dropout and rectified linear units.
+ * Can perform regression or classification.
+ * Training is done by multithreaded mini-batch gradient descent with native matrix lib.
+ *
+ * @author Johannes Amtén
  *
  */
 
 public class NeuralNetwork implements Serializable{
 
     private Matrix[] myThetas = null;
-    private boolean mySoftmax = true;
+    private boolean mySoftmax = false;
     private double myInputLayerDropoutRate = 0.0;
     private double myHiddenLayersDropoutRate = 0.0;
+
+    private double[] myAverages = null;
+    private double[] myStdDevs = null;
+    private int[] myNumCategories = null;
+    private int myNumClasses = 0;
 
     private transient final ReentrantReadWriteLock myThetasLock = new ReentrantReadWriteLock();
     private transient ExecutorService myExecutorService;
 
+    /**
+     * Create an empty Neural Network.
+     * Use train() to generate weights.
+     */
     public NeuralNetwork() {
     }
 
-    public void train(Matrix x, Matrix y, int[] hiddenUnits, double lambda, double alpha, int batchSize, int iterations,
-                      int threads, double inputLayerDropoutRate, double hiddenLayersDropoutRate, boolean softmax, boolean debug) throws Exception {
+    /**
+     * Train neural network
+     *
+     * @param x Training data, input.
+     *          One row for each training example.
+     *          One column for each attribute.
+     * @param numCategories Number of categories for each nominal attribute in x.
+     *                      This array should have the same length as the number of columns in x.
+     *                      For each nominal attribute, the value should be equal to the number of categories of that attribute.
+     *                      For each numeric attribute, the value should be 1.
+     *                      If numCategories is null, all attributes in x will be interpreted as numeric.
+     * @param y Training data, correct output.
+     * @param numClasses Number of classes, if classification.
+     *                   1 if regression.
+     * @param hiddenUnits Number of units in each hidden layer.
+     * @param weightPenalty L1 weight penalty.
+     *                      Even when using dropout, it may be a good idea to have a small weight penalty, to keep weights down and avoid overflow.
+     * @param learningRate Initial learning rate.
+     *                     If 0, different learning rates will be tried to automatically find a good initial rate.
+     * @param batchSize Number of examples to use in each mini-batch.
+     * @param iterations Number of iterations (epochs) of training to perform.
+     *                   Training may be halted earlier by the user, if debug flag is set.
+     * @param threads Number of concurrent calculations.
+     *                If 0, threads will automatically be set to the number of CPU cores found.
+     * @param inputLayerDropoutRate Dropout rate of input layer.
+     *                              Typically set somewhat lower than dropout rate in hidden layer, like 0.2.
+     * @param hiddenLayersDropoutRate Dropout rate of hidden layer.
+     *                              Typically set somewhat higher than dropout rate in input layer, like 0.5.
+     * @param debug If true, training progress will be output to the console.
+     *              Also, the user will be able to halt training by pressing enter in the console.
+     * @param normalizeNumericData If true, will normalize the data in all numeric columns, by subtracting average and dividing by standard deviation.
+     * @throws Exception
+     */
+    public void train(Matrix x, int[] numCategories, Matrix y, int numClasses, int[] hiddenUnits, double weightPenalty, double learningRate, int batchSize, int iterations,
+                      int threads, double inputLayerDropoutRate, double hiddenLayersDropoutRate, boolean debug, boolean normalizeNumericData) throws Exception {
+        myNumCategories = numCategories;
+        if (myNumCategories == null) {
+            myNumCategories = new int[x.numColumns()];
+            Arrays.fill(myNumCategories, 1);
+        }
+        myNumClasses = numClasses;
+        mySoftmax = myNumClasses > 1;
+
+        if (normalizeNumericData) {
+            x = x.copy();
+            myAverages = new double[x.numColumns()];
+            myStdDevs = new double[x.numColumns()];
+            for (int col = 0; col < x.numColumns(); col++) {
+                if (myNumCategories[col] <= 1) {
+                    // Normalize numeric column.
+                    myAverages[col] = MatrixUtils.getAverage(x, col);
+                    myStdDevs[col] = MatrixUtils.getStandardDeviation(x, col);
+                    MatrixUtils.normalizeData(x, col, myAverages[col], myStdDevs[col]);
+                }
+            }
+        } else {
+            myAverages = null;
+            myStdDevs = null;
+        }
+
+        // Expand nominal values to groups of booleans.
+        x = MatrixUtils.expandNominalAttributes(x, myNumCategories);
+        y = MatrixUtils.expandNominalAttributes(y, new int[] {myNumClasses} );
+
+
         initThetas(x.numColumns(), hiddenUnits, y.numColumns());
-        mySoftmax = softmax;
         myInputLayerDropoutRate = inputLayerDropoutRate;
         myHiddenLayersDropoutRate = hiddenLayersDropoutRate;
         // If threads == 0, use the same number of threads as cores.
@@ -47,35 +122,35 @@ public class NeuralNetwork implements Serializable{
         List<Matrix> batchesX = new ArrayList<>();
         List<Matrix> batchesY = new ArrayList<>();
         MatrixUtils.split(x, y, batchSize, batchesX, batchesY);
-        if (alpha == 0.0) {
-            // Auto-find initial alpha.
-            alpha = findInitialAlpha(x, y, lambda, debug);
+        if (learningRate == 0.0) {
+            // Auto-find initial learningRate.
+            learningRate = findInitialLearningRate(x, y, weightPenalty, debug);
         }
 
-        double cost = getCostThreaded(batchesX, batchesY, lambda);
+        double cost = getCostThreaded(batchesX, batchesY, weightPenalty);
         LinkedList<Double> oldCosts = new LinkedList<>();
         if (debug) {
             System.out.println("\n\n*** Training network. Press <enter> to halt. ***\n");
-            System.out.println("Iteration: 0" + ", Cost: " + String.format("%.3E", cost) + ", Alpha: " + String.format("%.1E", alpha));
+            System.out.println("Iteration: 0" + ", Cost: " + String.format("%.3E", cost) + ", Learning rate: " + String.format("%.1E", learningRate));
         }
         for (int i = 0; i < iterations && !halted; i++) {
             // Regenerate the batches each iteration, to get random samples each time.
             MatrixUtils.split(x, y, batchSize, batchesX, batchesY);
-            trainOneIterationThreaded(batchesX, batchesY, alpha, lambda);
-            cost = getCostThreaded(batchesX, batchesY, lambda);
+            trainOneIterationThreaded(batchesX, batchesY, learningRate, weightPenalty);
+            cost = getCostThreaded(batchesX, batchesY, weightPenalty);
 
             if (oldCosts.size() == 5) {
                 // Lower learning rate if cost haven't decreased for 5 iterations.
                 double oldCost = oldCosts.remove();
                 double minCost = Math.min(cost, Collections.min(oldCosts));
                 if (minCost >= oldCost) {
-                    alpha = alpha*0.1;
+                    learningRate = learningRate*0.1;
                     oldCosts.clear();
                 }
             }
 
             if (debug) {
-                System.out.println("Iteration: " + (i + 1) + ", Cost: " + String.format("%.3E", cost) + ", Alpha: " + String.format("%.1E", alpha));
+                System.out.println("Iteration: " + (i + 1) + ", Cost: " + String.format("%.3E", cost) + ", Learning rate: " + String.format("%.1E", learningRate));
             }
             oldCosts.add(cost);
 
@@ -92,16 +167,59 @@ public class NeuralNetwork implements Serializable{
         myExecutorService.shutdown();
     }
 
+    /**
+     * Get predictions for a number of input examples.
+     *
+     * @param x Matrix with one row for each input example and one column for each input attribute.
+     * @return Matrix with one row for each example.
+     *          If regression, only one column containing the predicted value.
+     *          If classification, one column for each class, containing the predicted probability of that class.
+     */
     public Matrix getPredictions(Matrix x) {
-        Matrix[] a = feedForward(x, null);
-        return a[a.length-1];
+        if (myAverages != null) {
+            x = x.copy();
+            for (int col = 0; col < x.numColumns(); col++) {
+                if (myNumCategories[col] <= 1) {
+                    // Normalize numeric column.
+                    MatrixUtils.normalizeData(x, col, myAverages[col], myStdDevs[col]);
+                }
+            }
+        }
+        // Expand nominal values to groups of booleans.
+        x = MatrixUtils.expandNominalAttributes(x, myNumCategories);
+
+        Matrix[] activations = feedForward(x, null);
+        return activations[activations.length-1];
     }
 
-    public double[] getPredictions(double[] x) {
-        Matrix xMatrix = new Matrix(new double[][]{x});
-        Matrix[] a = feedForward(xMatrix, null);
-        return a[a.length-1].getData();
+    /**
+     * Get classification predictions for a number of input examples.
+     *
+     * @param x Matrix with one row for each input example and one column for each input attribute.
+     * @return Matrix with one row for each example and one column containing the predicted class.
+     */
+    public int[] getPredictedClasses(Matrix x) {
+        Matrix y = getPredictions(x);
+        int[] predictedClasses = new int[x.numRows()];
+        for (int row = 0; row < y.numRows(); row++) {
+            int prediction = 0;
+            double predMaxValue = Double.MIN_VALUE;
+            for (int col = 0; col < y.numColumns(); col++) {
+                if (y.get(row, col) > predMaxValue) {
+                    predMaxValue = y.get(row, col);
+                    prediction = col;
+                }
+            }
+            predictedClasses[row] = prediction;
+        }
+        return predictedClasses;
     }
+
+//    public double[] getPredictions(double[] x) {
+//        Matrix xMatrix = new Matrix(new double[][]{x});
+//        Matrix[] a = feedForward(xMatrix, null);
+//        return a[a.length-1].getData();
+//    }
 
     private void initThetas(int inputs, int[] hidden, int outputs) {
         ArrayList<Integer> numNodes = new ArrayList<>();
@@ -176,7 +294,7 @@ public class NeuralNetwork implements Serializable{
         return nodes;
     }
 
-	private double getCost(Matrix x, Matrix y, double lambda, int batchSize) {
+	private double getCost(Matrix x, Matrix y, double weightPenalty, int batchSize) {
         double c = 0.0;
 
 		Matrix[] a = feedForward(x, null);
@@ -204,7 +322,7 @@ public class NeuralNetwork implements Serializable{
             c = c/(2*batchSize);
 		}
 
-        if (lambda > 0) {
+        if (weightPenalty > 0) {
             // Regularization
             double regSum = 0.0;
             for (Matrix theta:myThetas) {
@@ -212,13 +330,13 @@ public class NeuralNetwork implements Serializable{
                     regSum += Math.abs(me.value());
                 }
             }
-            c += regSum*lambda/numberOfNodes();
+            c += regSum*weightPenalty/numberOfNodes();
         }
 	    
 	    return c;
 	}
 
-    private double getCostThreaded(List<Matrix> batchesX, List<Matrix> batchesY, final double lambda) throws Exception {
+    private double getCostThreaded(List<Matrix> batchesX, List<Matrix> batchesY, final double weightPenalty) throws Exception {
         final int batchSize = batchesX.get(0).numRows();
         // Queue up cost calculation in thread pool
         List<Future<Double>> costJobs = new ArrayList<>();
@@ -228,7 +346,7 @@ public class NeuralNetwork implements Serializable{
             Callable<Double> costCalculator = new Callable<Double>() {
                 public Double call() throws Exception {
                     myThetasLock.readLock().lock();
-                    double cost = getCost(bx, by, lambda, batchSize);
+                    double cost = getCost(bx, by, weightPenalty, batchSize);
                     myThetasLock.readLock().unlock();
                     return cost;
                 }
@@ -245,7 +363,7 @@ public class NeuralNetwork implements Serializable{
         return cost;
     }
 
-	private Matrix[] getGradients(Matrix x, Matrix y, double lambda, Matrix[] dropoutMasks, int batchSize) {
+	private Matrix[] getGradients(Matrix x, Matrix y, double weightPenalty, Matrix[] dropoutMasks, int batchSize) {
 
         int numLayers = myThetas.length+1;
 
@@ -278,7 +396,7 @@ public class NeuralNetwork implements Serializable{
             thetaGrad[layer].scale(1.0/batchSize);
         }
 
-        if (lambda > 0) {
+        if (weightPenalty > 0) {
             // Add regularization terms
             int numNodes = numberOfNodes();
             for (int thetaNr = 0; thetaNr < numLayers-1 ; thetaNr++) {
@@ -286,7 +404,7 @@ public class NeuralNetwork implements Serializable{
                 Matrix grad = thetaGrad[thetaNr];
                 for (int row = 0; row < grad.numRows() ; row++) {
                     for (int col = 1; col < grad.numColumns(); col++) {
-                        double regTerm = lambda/numNodes*Math.signum(theta.get(row, col));
+                        double regTerm = weightPenalty/numNodes*Math.signum(theta.get(row, col));
                         grad.add(row, col, regTerm);
                     }
                 }
@@ -312,7 +430,7 @@ public class NeuralNetwork implements Serializable{
         return masks;
     }
 	
-    private void trainOneIterationThreaded(List<Matrix> batchesX, List<Matrix> batchesY, final double alpha, final double lambda) throws Exception {
+    private void trainOneIterationThreaded(List<Matrix> batchesX, List<Matrix> batchesY, final double learningRate, final double weightPenalty) throws Exception {
         final int batchSize = batchesX.get(0).numRows();
 
         // Queue up all batches for gradient computation in the thread pool.
@@ -326,11 +444,11 @@ public class NeuralNetwork implements Serializable{
                     boolean useDropout = myInputLayerDropoutRate > 0.0 || myHiddenLayersDropoutRate > 0.0;
                     Matrix[] dropoutMasks = useDropout ? generateDropoutMasks(by.numRows()) : null;
                     myThetasLock.readLock().lock();
-                    Matrix[] gradients = getGradients(bx, by, lambda, dropoutMasks, batchSize);
+                    Matrix[] gradients = getGradients(bx, by, weightPenalty, dropoutMasks, batchSize);
                     myThetasLock.readLock().unlock();
                     myThetasLock.writeLock().lock();
                     for (int theta = 0; theta < myThetas.length; theta++) {
-                        myThetas[theta].add(-alpha, gradients[theta]);
+                        myThetas[theta].add(-learningRate, gradients[theta]);
                     }
                     myThetasLock.writeLock().unlock();
                 }
@@ -352,7 +470,7 @@ public class NeuralNetwork implements Serializable{
         return res;
     }
 
-    private double findInitialAlpha(Matrix x, Matrix y, double lambda, boolean debug) throws Exception {
+    private double findInitialLearningRate(Matrix x, Matrix y, double weightPenalty, boolean debug) throws Exception {
         int numUsedTrainingExamples = 5000;
         int batchSize = 100;
         int numBatches = numUsedTrainingExamples/batchSize;
@@ -370,32 +488,32 @@ public class NeuralNetwork implements Serializable{
         }
 
         Matrix[] startThetas = deepCopy(myThetas);
-        double alpha = 1.0E-10;
-        trainOneIterationThreaded(batchesX, batchesY, alpha, lambda);
-        double cost = getCostThreaded(batchesX, batchesY, lambda);
+        double lr = 1.0E-10;
+        trainOneIterationThreaded(batchesX, batchesY, lr, weightPenalty);
+        double cost = getCostThreaded(batchesX, batchesY, weightPenalty);
         if (debug) {
-            System.out.println("\n\nAuto-finding learning rate, alpha");
-            System.out.println("Alpha: " + String.format("%.1E", alpha) + " Cost: " + cost); ////////////////////////////
+            System.out.println("\n\nAuto-finding learning rate.");
+            System.out.println("Learning rate: " + String.format("%.1E", lr) + " Cost: " + cost); ////////////////////////////
         }
         myThetas = deepCopy(startThetas);
         double lastCost = Double.MAX_VALUE;
-        double lastAlpha = alpha;
+        double lastLR = lr;
         while (cost < lastCost) {
             lastCost = cost;
-            lastAlpha = alpha;
-            alpha = alpha*10.0;
-            trainOneIterationThreaded(batchesX, batchesY, alpha, lambda);
-            cost = getCostThreaded(batchesX, batchesY, lambda);
+            lastLR = lr;
+            lr = lr*10.0;
+            trainOneIterationThreaded(batchesX, batchesY, lr, weightPenalty);
+            cost = getCostThreaded(batchesX, batchesY, weightPenalty);
             if (debug) {
-                System.out.println("Alpha: " + String.format("%.1E", alpha) + " Cost: " + cost); ////////////////////////////
+                System.out.println("Learning rate: " + String.format("%.1E", lr) + " Cost: " + cost); ////////////////////////////
             }
             myThetas = deepCopy(startThetas);
         }
 
         if (debug) {
-            System.out.println("Using alpha: " + String.format("%.1E", lastAlpha));
+            System.out.println("Using learning rate: " + String.format("%.1E", lastLR));
         }
-        return lastAlpha;
+        return lastLR;
     }
 
 

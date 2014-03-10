@@ -12,7 +12,12 @@ import java.util.Collections;
 import java.util.Enumeration;
 
 /**
- * Created by Johannes Amtén on 2014-02-24.
+ * Weka Classifier wrapper around NeuralNetwork class.
+ *
+ * Neural network implementation with dropout and rectified linear units.
+ * Can perform regression or classification.
+ * Training is done by multithreaded mini-batch gradient descent with native matrix lib.
+
  *
  */
 
@@ -31,11 +36,6 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
 
     // Model
     private amten.ml.NeuralNetwork myNN = null;
-    private double[] myAverages = null;
-    private double[] myStdDevs = null;
-    ArrayList<Integer> myNumericColumns;
-    ArrayList<Integer> myNominalColumns;
-    int myNumNominalCategories = 0;
 
     public NeuralNetwork() {
         super();
@@ -46,109 +46,66 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
     public void buildClassifier(Instances instances) throws Exception {
 
         int numExamples = instances.numInstances();
+        int numInputAttributes = instances.numAttributes() - 1;
 
         int classIndex = instances.classIndex();
         int numClasses = instances.numClasses();
 
         // Get class values, y.
-        boolean softmax = instances.attribute(classIndex).isNominal();
         double[] classValues = instances.attributeToDoubleArray(classIndex);
-        Matrix y;
-        if (softmax) {
-            // Change answers from single nominal to group of booleans
-            y = new Matrix(numExamples, numClasses);
-            for (MatrixElement me: y) {
-                me.set(me.col() ==  classValues[me.row()] ? 1.0 : 0.0 );
-            }
-        } else {
-            y = new Matrix(numExamples, 1);
-            for (MatrixElement me: y) {
-                me.set(classValues[me.row()]);
-            }
+        Matrix y = new Matrix(numExamples, 1);
+        for (MatrixElement me: y) {
+            me.set(classValues[me.row()]);
         }
 
 
         // Get input values, x.
 
-        // First, find numerical and nominal columns
-        myNumericColumns = new ArrayList<>();
-        myNominalColumns = new ArrayList<>();
-        myNumNominalCategories = 0;
+        // Find nominal columns and their number of categories
+        Matrix x = new Matrix(numExamples, numInputAttributes);
+        int[] numCategories = new int[numInputAttributes];
+        int col = 0;
         for (int attrIndex = 0; attrIndex < instances.numAttributes(); attrIndex++) {
             Attribute attr = instances.attribute(attrIndex);
-            if (attr.isNumeric() && attrIndex != classIndex) {
-                myNumericColumns.add(attrIndex);
-            } else if (attr.isNominal() && attrIndex != classIndex) {
-                myNominalColumns.add(attrIndex);
-                myNumNominalCategories += attr.numValues();
-            }
-        }
-
-        // Get all numeric values and normalize them
-        Matrix xNumeric = new Matrix(numExamples, myNumericColumns.size());
-        int xCol = 0;
-        for (int col:myNumericColumns) {
-            for (int inst = 0; inst < numExamples; inst++) {
-                boolean missing = instances.get(inst).isMissing(col);
-                double value = missing ? 0.0 : instances.get(inst).value(col);
-                xNumeric.set(inst, xCol, value);
-            }
-            xCol++;
-        }
-        myAverages = MatrixUtils.getAverages(xNumeric);
-        myStdDevs = MatrixUtils.getStandardDeviations(xNumeric);
-        MatrixUtils.normalizeData(xNumeric, myAverages, myStdDevs);
-
-        // Get all nominal values and expand them to groups of booleans.
-        Matrix xNominal = new Matrix(numExamples, myNumNominalCategories);
-        xCol = 0;
-        for (int col:myNominalColumns) {
-            Attribute attr = instances.attribute(col);
-            int numCategories = attr.numValues();
-            // One unit for each category.
-            for (int cat = 0; cat < numCategories; cat++) {
-                for (int inst = 0; inst < numExamples; inst++) {
-                    boolean missing = instances.get(inst).isMissing(col);
-                    double value = !missing && cat == instances.get(inst).value(col) ? 1.0 : 0.0;
-                    xNominal.set(inst, xCol, value);
+            if (attrIndex != classIndex) {
+                for (int row = 0; row < numExamples; row++) {
+                    double value = instances.get(row).value(attrIndex);
+                    boolean missing = instances.get(row).isMissing(attrIndex);
+                    if (missing) {
+                        value = attr.isNominal() ? -1.0 : 0.0;
+                    }
+                    x.set(row, col, value);
                 }
-                xCol++;
+                // Find number of categories of nominal column.
+                numCategories[col] = attr.isNominal() ?  attr.numValues() : 1;
+                col++;
             }
         }
-
-        Matrix x = xNumeric.addColumns(xNominal);
 
         myNN = new amten.ml.NeuralNetwork();
-        myNN.train(x, y, myHiddenUnits, myWeightPenalty, myLearningRate, myBatchSize, myIterations, myThreads, myInputLayerDropoutRate, myHiddenLayersDropoutRate, softmax, getDebug());
+        myNN.train(x, numCategories, y, numClasses, myHiddenUnits, myWeightPenalty, myLearningRate, myBatchSize, myIterations, myThreads, myInputLayerDropoutRate, myHiddenLayersDropoutRate, getDebug(), true);
     }
 
     public double[] distributionForInstance(Instance instance) throws Exception {
-        // First, get all numeric values and normalize them
-        double[] xNumeric = new double[myNumericColumns.size()];
-        int xIndex = 0;
-        for (int col:myNumericColumns) {
-            double value = instance.isMissing(col) ? 0.0 : instance.value(col);
-            xNumeric[xIndex] = value;
-            xIndex++;
-        }
-        MatrixUtils.normalizeData(xNumeric, myAverages, myStdDevs);
 
-        // Then get all nominal values and expand them to groups of booleans.
-        double[] x = new double[xNumeric.length + myNumNominalCategories];
-        System.arraycopy(xNumeric, 0, x, 0, xNumeric.length);
-        for (int col:myNominalColumns) {
-            Attribute attr = instance.attribute(col);
-            int numCategories = attr.numValues();
-            // One unit for each category.
-            for (int cat = 0; cat < numCategories; cat++) {
-                boolean missing = instance.isMissing(col);
-                double value = !missing && cat == instance.value(col) ? 1.0 : 0.0;
-                x[xIndex] = value;
-                xIndex++;
+        Matrix x = new Matrix(1, instance.numAttributes()-1);
+        int classIndex = instance.classIndex();
+
+        int col = 0;
+        for (int attrIndex = 0; attrIndex < instance.numAttributes(); attrIndex++) {
+            Attribute attr = instance.attribute(attrIndex);
+            if (attrIndex != classIndex) {
+                double value = instance.value(attrIndex);
+                boolean missing = instance.isMissing(attrIndex);
+                if (missing) {
+                    value = attr.isNominal() ? -1.0 : 0.0;
+                }
+                x.set(0, col, value);
+                col++;
             }
         }
 
-        return myNN.getPredictions(x);
+        return myNN.getPredictions(x).getRow(0);
     }
 
     /**
@@ -190,10 +147,10 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
 
     public void setOptions(String[] options) throws Exception {
 
-        String lambdaString = Utils.getOption("wp", options);
-        myWeightPenalty = lambdaString.equals("") ? 0.0 : Double.parseDouble(lambdaString);
-        String alphaString = Utils.getOption("lr", options);
-        myLearningRate = alphaString.equals("") ? 0.0 : Double.parseDouble(alphaString);
+        String weightPenaltyString = Utils.getOption("wp", options);
+        myWeightPenalty = weightPenaltyString.equals("") ? 0.0 : Double.parseDouble(weightPenaltyString);
+        String lrString = Utils.getOption("lr", options);
+        myLearningRate = lrString.equals("") ? 0.0 : Double.parseDouble(lrString);
         String iterationsString = Utils.getOption('i', options);
         myIterations = iterationsString.equals("") ? 10000 : Integer.parseInt(iterationsString);
         String threadsString = Utils.getOption('t', options);

@@ -5,19 +5,27 @@ import au.com.bytecode.opencsv.CSVReader;
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 
 
 /**
- * Created by Johannes Amtén on 2014-02-24.
+ * Some helper methods for manipulating matrices.
+ *
+ * @author Johannes Amtén
  *
  */
 
 public class MatrixUtils {
 
+    /**
+     * Reads a CSV-file from disk into a Matrix.
+     *
+     * @param filename
+     * @param separator Separator character between values.
+     * @param headerLines Number of header lines to skip before reading data.
+     * @return Matrix
+     * @throws IOException
+     */
 	public static Matrix readCSV(String filename, char separator, int headerLines) throws IOException {
 		BufferedReader br = new BufferedReader(new FileReader(filename));
 		CSVReader cr = new CSVReader(br, separator, '\"', '\\', headerLines);
@@ -54,56 +62,145 @@ public class MatrixUtils {
         return bias.addColumns(m);
 	}
 
-//	/*
-//	 * NOTE: If you normalize the input, normalize ONLY on the training data, NOT on the whole data set!
-//	 */
-//	public static Matrix[] split(Matrix m, float crossValidationPercent, float testPercent)
-//	{
-//		ArrayList<Integer> rowIndexes = new ArrayList<>();
-//		for (int ri = 0; ri < m.numRows(); ri++) {
-//			rowIndexes.add(ri);
-//		}
-//		Collections.shuffle(rowIndexes);
-//
-//		int numCVRows = Math.round(m.numRows()*crossValidationPercent/100);
-//		int numTestRows = Math.round(m.numRows()*testPercent/100);
-//		int numTrainRows = m.numRows() - numCVRows - numTestRows;
-//
-//		Matrix trainMatrix = new Matrix(numTrainRows, m.numColumns());
-//		Matrix cvMatrix = new Matrix(numCVRows, m.numColumns());
-//		Matrix testMatrix = new Matrix(numTestRows, m.numColumns());
-//
-//		Iterator<Integer> mRowsIter = rowIndexes.iterator();
-//
-//		for (int row = 0; row < trainMatrix.numRows(); row++) {
-//			int mRow = mRowsIter.next().intValue();
-//			for (int col = 0; col < trainMatrix.numColumns(); col++)
-//			{
-//				double value = m.get(mRow, col);
-//				trainMatrix.set(row, col, value);
-//			}
-//		}
-//
-//		for (int row = 0; row < cvMatrix.numRows(); row++) {
-//			int mRow = mRowsIter.next().intValue();
-//			for (int col = 0; col < cvMatrix.numColumns(); col++)
-//			{
-//				double value = m.get(mRow, col);
-//				cvMatrix.set(row, col, value);
-//			}
-//		}
-//
-//		for (int row = 0; row < testMatrix.numRows(); row++) {
-//			int mRow = mRowsIter.next().intValue();
-//			for (int col = 0; col < testMatrix.numColumns(); col++)
-//			{
-//				double value = m.get(mRow, col);
-//				testMatrix.set(row, col, value);
-//			}
-//		}
-//
-//		return new Matrix[] {trainMatrix, cvMatrix, testMatrix};
-//	}
+    public static Matrix expandNominalAttributes(Matrix mCompressed, int[] numCategories) {
+        if (numCategories == null) {
+            numCategories = new int[mCompressed.numColumns()];
+            Arrays.fill(numCategories, 0);
+        }
+
+        int numExamples = mCompressed.numRows();
+        int numColumnsExpanded = 0;
+        for (int numCat:numCategories) {
+            numColumnsExpanded += numCat > 0 ? numCat : 1;
+        }
+
+        Matrix mExpanded = new Matrix(numExamples, numColumnsExpanded);
+        int expandedCol = 0;
+        for (int compressedCol = 0; compressedCol < mCompressed.numColumns(); compressedCol++) {
+            if (numCategories[compressedCol] <= 1) {
+                // Numeric attribute.
+                // Copy values
+                for (int row = 0; row < numExamples; row++) {
+                    mExpanded.set(row, expandedCol, mCompressed.get(row, compressedCol));
+                }
+                expandedCol++;
+            } else {
+                // Nominal attribute.
+                // Expand values to groups of booleans
+                for (int cat = 0; cat < numCategories[compressedCol]; cat++) {
+                    for (int row = 0; row < numExamples; row++) {
+                        double value = cat == mCompressed.get(row, compressedCol) ? 1.0 : 0.0;
+                        mExpanded.set(row, expandedCol, value);
+                    }
+                    expandedCol++;
+                }
+            }
+        }
+        return mExpanded;
+    }
+
+    public static Matrix compressNominalAttributes(Matrix mExpanded, int[] numCategories) {
+        if (numCategories == null) {
+            numCategories = new int[mExpanded.numColumns()];
+            Arrays.fill(numCategories, 0);
+        }
+
+        int numExamples = mExpanded.numRows();
+        int numColumnsCompressed = numCategories.length;
+
+
+        // Get all nominal values and compress them from groups of booleans to numeric values.
+        Matrix mCompressed = new Matrix(numExamples, numColumnsCompressed);
+        int expandedCol = 0;
+        for (int compressedCol = 0; compressedCol < mCompressed.numColumns(); compressedCol++) {
+            if (numCategories[compressedCol] < 1) {
+                // Numeric attribute.
+                // Copy values
+                for (int row = 0; row < numExamples; row++) {
+                    mCompressed.set(row, compressedCol, mExpanded.get(row, expandedCol));
+                }
+                expandedCol++;
+            } else {
+                // Nominal attribute.
+                // Compress values from groups of booleans to single numeric value.
+                for (int row = 0; row < numExamples; row++) {
+                    mCompressed.set(row, compressedCol, -1);
+                    for (int cat = 0; cat < numCategories[compressedCol]; cat++) {
+                        // Find the category with 1.0 boolean
+                        if (mExpanded.get(row, expandedCol) == 1.0) {
+                            mCompressed.set(row, compressedCol, cat);
+                        }
+                    }
+                    expandedCol++;
+                }
+            }
+        }
+        return mCompressed;
+    }
+
+
+
+	/**
+     *
+	 */
+
+    /**
+     * Split a dataset into traingin, crossvalidation and testing data.
+     *
+ 	 * NOTE: If you normalize the input, normalize ONLY on the training data, NOT on the whole data set!
+     *
+     * @param m
+     * @param crossValidationPercent
+     * @param testPercent
+     * @return Matrix
+     */
+	public static Matrix[] split(Matrix m, float crossValidationPercent, float testPercent)
+	{
+		ArrayList<Integer> rowIndexes = new ArrayList<>();
+		for (int ri = 0; ri < m.numRows(); ri++) {
+			rowIndexes.add(ri);
+		}
+		Collections.shuffle(rowIndexes);
+
+		int numCVRows = Math.round(m.numRows()*crossValidationPercent/100);
+		int numTestRows = Math.round(m.numRows()*testPercent/100);
+		int numTrainRows = m.numRows() - numCVRows - numTestRows;
+
+		Matrix trainMatrix = new Matrix(numTrainRows, m.numColumns());
+		Matrix cvMatrix = new Matrix(numCVRows, m.numColumns());
+		Matrix testMatrix = new Matrix(numTestRows, m.numColumns());
+
+		Iterator<Integer> mRowsIter = rowIndexes.iterator();
+
+		for (int row = 0; row < trainMatrix.numRows(); row++) {
+			int mRow = mRowsIter.next().intValue();
+			for (int col = 0; col < trainMatrix.numColumns(); col++)
+			{
+				double value = m.get(mRow, col);
+				trainMatrix.set(row, col, value);
+			}
+		}
+
+		for (int row = 0; row < cvMatrix.numRows(); row++) {
+			int mRow = mRowsIter.next().intValue();
+			for (int col = 0; col < cvMatrix.numColumns(); col++)
+			{
+				double value = m.get(mRow, col);
+				cvMatrix.set(row, col, value);
+			}
+		}
+
+		for (int row = 0; row < testMatrix.numRows(); row++) {
+			int mRow = mRowsIter.next().intValue();
+			for (int col = 0; col < testMatrix.numColumns(); col++)
+			{
+				double value = m.get(mRow, col);
+				testMatrix.set(row, col, value);
+			}
+		}
+
+		return new Matrix[] {trainMatrix, cvMatrix, testMatrix};
+	}
 
     public static void split(Matrix x, Matrix y, int batchSize, List<Matrix> batchesX, List<Matrix> batchesY)
     {
@@ -222,60 +319,46 @@ public class MatrixUtils {
 		return m;
 	}
 
-	public static double[] getAverages(Matrix m) {
-		double[] answer = new double[m.numColumns()];
-		
-		for (int col = 0; col < answer.length; col++) {
-            answer[col] = 0;
-            for (int row = 0; row < m.numRows() ; row++) {
-    			answer[col] += m.get(row, col);
-            }
-            answer[col] = answer[col] / m.numRows();
-		}
-		
-		return answer;
+	public static double getAverage(Matrix m, int col) {
+		double sum = 0.0;
+        for (int row = 0; row < m.numRows() ; row++) {
+            sum += m.get(row, col);
+        }
+		return sum / m.numRows();
 	}
 	
 
-	public static double[] getStandardDeviations(Matrix m) {
-		double[] answer = new double[m.numColumns()];
-		
-		for (int col = 0; col < answer.length; col++) {
-			double largestValue = Double.NEGATIVE_INFINITY;
-			double smallestValue = Double.POSITIVE_INFINITY;
-			for (int row = 0; row < m.numRows(); row++) {
-				double value = m.get(row, col);
-				if (value > largestValue) {
-					largestValue = value;
-				}
-				if (value < smallestValue) {
-					smallestValue = value;
-				}
-			}
-			answer[col] = largestValue - smallestValue;
-		}
-		
-		return answer;
+	public static double getStandardDeviation(Matrix m, int col) {
+        double largestValue = Double.NEGATIVE_INFINITY;
+        double smallestValue = Double.POSITIVE_INFINITY;
+        for (int row = 0; row < m.numRows(); row++) {
+            double value = m.get(row, col);
+            if (value > largestValue) {
+                largestValue = value;
+            }
+            if (value < smallestValue) {
+                smallestValue = value;
+            }
+        }
+
+		return largestValue - smallestValue;
 	}
 	
-	public static void normalizeData(double[] x, double[] averages, double[] standardDeviations) {
-		for (int col = 0; col < x.length; col++) {
-            double avg = averages[col];
-            // Avoid division by zero if standard deviation is zero.
-            double stdev = standardDeviations[col] > 0.0 ? standardDeviations[col] : 1.0;
-			x[col] = (x[col]-avg)/stdev;
-		}
+	public static double normalizeData(double x, double average, double standardDeviation) {
+        if (standardDeviation == 0.0) {
+            standardDeviation = 1.0;
+        }
+		return (x-average)/standardDeviation;
 	}
 	
-	public static void normalizeData(Matrix x, double[] averages, double[] standardDeviations) {
-		for (int col = 0; col < x.numColumns(); col++) {
-            double avg = averages[col];
-            // Avoid division by zero if standard deviation is zero.
-            double stdev = standardDeviations[col] > 0.0 ? standardDeviations[col] : 1.0;
-			for (int row = 0; row < x.numRows(); row++)	{
-				x.set(row, col, (x.get(row, col)-avg)/stdev);
-			}
-		}
+	public static void normalizeData(Matrix x, int col, double average, double standardDeviation) {
+        // Avoid division by zero if standard deviation is zero.
+        if (standardDeviation == 0.0) {
+            standardDeviation = 1.0;
+        }
+        for (int row = 0; row < x.numRows(); row++)	{
+            x.set(row, col, (x.get(row, col)-average)/standardDeviation);
+        }
 	}
 
 }
