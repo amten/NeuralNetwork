@@ -9,9 +9,70 @@ import amten.ml.matrix.MatrixUtils;
  *
  */
 public class NeuralNetworkTest {
-    public static void main(String[] args) throws Exception {
 
-//        ///////////////////////////////// Gradient Test
+
+    /**
+     * Performs classification of Handwritten digits,
+     * using a subset (1000 rows) from the Kaggle Digits competition.
+     */
+    public static void runKaggleDigitsClassification() throws Exception {
+        // Read data from CSV-file
+        int headerRows = 1;
+        char separator = ',';
+        Matrix data = MatrixUtils.readCSV("example_data/Kaggle_Digits_1000.csv", separator, headerRows);
+
+        // Split data into training set and crossvalidation set.
+        float crossValidationPercent = 33;
+        Matrix[] split = MatrixUtils.split(data, crossValidationPercent, 0);
+        Matrix dataTrain = split[0];
+        Matrix dataCV = split[1];
+
+        // First column contains the classification label. The rest are the indata.
+        Matrix xTrain = dataTrain.getColumns(1, -1);
+        Matrix yTrain = dataTrain.getColumns(0, 0);
+        Matrix xCV = dataCV.getColumns(1, -1);
+        Matrix yCV = dataCV.getColumns(0, 0);
+
+        int numClasses = 10; // 10 digits to classify
+        int[] hiddenUnits = { 100 };
+        double weightPenalty = 1E-8;
+        // Learning rate 0 will autofind an initial learning rate.
+        double learningRate = 0;
+        int batchSize = 100;
+        int iterations = 200;
+        // Threads = 0 will autofind number of processor cores in computer.
+        int threads = 0;
+        double inputLayerDropoutRate = 0.2;
+        double hiddenLayersDropoutRate = 0.5;
+        boolean debug = true;
+        boolean normalize = true;
+
+        long startTime = System.currentTimeMillis();
+        amten.ml.NeuralNetwork nn = new amten.ml.NeuralNetwork();
+        nn.train(xTrain, null, yTrain, numClasses, hiddenUnits, weightPenalty, learningRate, batchSize, iterations, threads, inputLayerDropoutRate, hiddenLayersDropoutRate, debug, normalize);
+        System.out.println("Training time: " + (System.currentTimeMillis() - startTime) / 1000.0 + "s");
+
+        int[] predictedClasses = nn.getPredictedClasses(xTrain);
+        int correct = 0;
+        for (int i = 0; i < predictedClasses.length; i++) {
+            if (predictedClasses[i] == yTrain.get(i, 0)) {
+                correct++;
+            }
+        }
+        System.out.println("Training set accuracy: " + (double) correct/predictedClasses.length*100 + "%");
+
+        predictedClasses = nn.getPredictedClasses(xCV);
+        correct = 0;
+        for (int i = 0; i < predictedClasses.length; i++) {
+            if (predictedClasses[i] == yCV.get(i, 0)) {
+                correct++;
+            }
+        }
+        System.out.println("Crossvalidation set accuracy: " + (double) correct/predictedClasses.length*100 + "%");
+
+    }
+
+//    public static void runGradientTest() {
 //        DenseMatrix x = MatrixUtils.readCSV("C:\\Users\\glenn\\Documents\\Octave\\ML\\ex4\\x.csv", ',', 0);
 //        DenseVector y = MatrixUtils.getSubVector(MatrixUtils.readCSV("C:\\Users\\glenn\\Documents\\Octave\\ML\\ex4\\y.csv", ',', 0),  0, -1, 0);
 //
@@ -58,62 +119,10 @@ public class NeuralNetworkTest {
 //
 //            }
 //        }
-//        System.exit(0);
+//    }
 
+    public static void main(String[] args) throws Exception {
+        runKaggleDigitsClassification();
 
-        // Use digit image recognition example.
-        Matrix x = MatrixUtils.readCSV("C:\\Users\\glenn\\Documents\\Octave\\ML\\ex4\\x.csv", ',', 0);
-        Matrix y = MatrixUtils.readCSV("C:\\Users\\glenn\\Documents\\Octave\\ML\\ex4\\y.csv", ',', 0);
-
-//        DenseMatrix x = MatrixUtils.readCSV("C:\\Users\\glenn\\Documents\\Kaggle\\Digit Recognizer\\train_sample_1000.csv", ',', 1);
-//        DenseVector y = MatrixUtils.getSubVector(x, 0, -1, x.numColumns()-1);
-//        x = MatrixUtils.getSubMatrix(x, 0, -1, 0, x.numColumns()-2);
-//        double[] averages = MatrixUtils.getAverages(x);
-//        double[] stdDevs = MatrixUtils.getStandardDeviations(x);
-//        MatrixUtils.normalizeData(x, averages, stdDevs);
-
-
-        // Change answers from nominal to 10 booleans
-        Matrix yExpanded = new Matrix(x.numRows(), 10);
-        for (MatrixElement me: yExpanded)
-        {
-            me.set(me.col() + 1 ==  y.get(me.row(), 0) ? 1 : 0  );
-//            me.set(me.column() ==  y.get(me.row()) ? 1 : 0  );
-
-        }
-
-
-        int[] hiddenUnits = { 100 };
-        double lambda = 1E-8;
-        double alpha = 0;
-        int batchSize = 100;
-        int iterations = 200;
-        int threads = 0;
-        double inputLayerDropoutRate = 0.2;
-        double hiddenLayersDropoutRate = 0.5;
-        long startTime = System.currentTimeMillis();
-        amten.ml.NeuralNetwork nn = new amten.ml.NeuralNetwork();
-        nn.train(x, yExpanded, hiddenUnits, lambda, alpha, batchSize, iterations, threads, inputLayerDropoutRate, hiddenLayersDropoutRate, true, true);
-
-        Matrix h = nn.getPredictions(x);
-        int correct = 0;
-        for (int i = 0; i < h.numRows(); i++) {
-            int prediction = 0;
-            double predMaxValue = Double.MIN_VALUE;
-            for (int j = 0; j < h.numColumns(); j++) {
-                if (h.get(i, j) > predMaxValue) {
-                    predMaxValue = h.get(i, j);
-                    prediction = j + 1;
-//                    prediction = j;
-                }
-            }
-            if (prediction == y.get(i, 0)) {
-                correct++;
-            }
-        }
-        System.out.println("Time: " + (System.currentTimeMillis()-startTime)/1000.0 + "s");
-        System.out.println("Accuracy: " + (double) correct/h.numRows()*100 + "%");
-
-        System.exit(0);
     }
 }
