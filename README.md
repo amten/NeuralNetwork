@@ -19,7 +19,7 @@ For Linux, native matrix library files have not been tested, though it should be
 
 This package was made mainly to be used from the Weka UI, but it can be used in your own java code as well.
 
-Go to https://github.com/amten/NeuralNetwork/releases/latest to find the latest release. Download the files NeuralNetwork.zip and unzip. 
+Go to https://github.com/amten/NeuralNetwork/releases/latest to find the latest release. Download the file NeuralNetwork.zip and unzip. 
 
 Include the files NeuralNetwork.jar, lib/mtj-1.0-snapshot.jar, lib/opencsv-2.3.jar in your classpath.
 
