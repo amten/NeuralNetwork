@@ -8,9 +8,13 @@ import java.util.Arrays;
 import java.util.Iterator;
 
 /**
- * Created by Johannes Amtén on 2014-02-24.
- *
  * Wrapper class around MTJs Matrix.
+ * @link https://github.com/fommil/matrix-toolkits-java
+ *
+ * Having a wrapper class makes it easier to change underlying matrix lib.
+ * Also, implements a few methods lacking in MTJ
+ *
+ * @author Johannes Amtén
  *
  */
 public class Matrix implements Iterable<MatrixElement>, Serializable {
@@ -45,6 +49,22 @@ public class Matrix implements Iterable<MatrixElement>, Serializable {
 
     public double get(int row, int col) {
         return myMatrix.get(row, col);
+    }
+
+    public double[] getRow(int row) {
+        double[] data = new double[numColumns()];
+        for (int col = 0; col < numColumns(); col++) {
+            data[col] = get(row, col);
+        }
+        return data;
+    }
+
+    public double[] getCol(int col) {
+        double[] data = new double[numColumns()];
+        for (int row = 0; row < numRows(); row++) {
+            data[row] = get(row, col);
+        }
+        return data;
     }
 
     public void set(int row, int col, double v) {

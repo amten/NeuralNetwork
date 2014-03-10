@@ -1,7 +1,9 @@
 package amten.ml.matrix;
 
 /**
- * Created by Johannes Amtén on 2014-02-24.
+ * Class used when iterating over elements in a Matrix.
+ *
+ * @author Johannes Amtén
  *
  */
 
