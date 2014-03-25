@@ -1,7 +1,6 @@
-
 ## What's this?
 
-Java (convolutional) neural network implementation with plugin for [Weka] (http://www.cs.waikato.ac.nz/ml/weka/). Uses dropout and rectified linear units. Implementation is multithreaded and uses [MTJ] (https://github.com/fommil/matrix-toolkits-java) matrix library with native libs for performance.
+Java (convolutional or fully-connected) neural network implementation with plugin for [Weka] (http://www.cs.waikato.ac.nz/ml/weka/). Uses dropout and rectified linear units. Implementation is multithreaded and uses [MTJ] (https://github.com/fommil/matrix-toolkits-java) matrix library with native libs for performance.
 
 ## Installation
 
