@@ -5,10 +5,10 @@
 PackageName=NeuralNetwork
 
 # Version (required)
-Version=0.1.1
+Version=1.0
 
 #Date (year-month-day)
-Date=2014-02-26
+Date=2014-03-25
 
 # Title (required)
 Title=Neural Network

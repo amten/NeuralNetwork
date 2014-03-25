@@ -1,5 +1,6 @@
 package amten.ml.examples;
 
+import amten.ml.NNLayerParams;
 import amten.ml.matrix.Matrix;
 import amten.ml.matrix.MatrixUtils;
 
@@ -18,8 +19,12 @@ public class NNClassificationExample {
      *
      * @see <a href="http://www.kaggle.com/c/digit-recognizer">http://www.kaggle.com/c/digit-recognizer</a></a>
      */
-    public static void runKaggleDigitsClassification() throws Exception {
-        System.out.println("Running classification on Kaggle Digits dataset...\n");
+    public static void runKaggleDigitsClassification(boolean useConvolution) throws Exception {
+        if (useConvolution) {
+            System.out.println("Running classification on Kaggle Digits dataset, with convolution...\n");
+        } else {
+            System.out.println("Running classification on Kaggle Digits dataset...\n");
+        }
         // Read data from CSV-file
         int headerRows = 1;
         char separator = ',';
@@ -39,12 +44,15 @@ public class NNClassificationExample {
 
         int[] numCategories = null; // Just numeric indata, no nominal attributes.
         int numClasses = 10; // 10 digits to classify
-        int[] hiddenUnits = { 100 };
-        double weightPenalty = 1E-8;
+        int intputWidth = 0;
+        NNLayerParams[] hiddenLayerParams = useConvolution ? new NNLayerParams[]{ new NNLayerParams(20, 5, 5, 2, 2) , new NNLayerParams(100, 5, 5, 2, 2) } :
+                                                            new NNLayerParams[] { new NNLayerParams(100) };
+        int batchSize = useConvolution ? 1 : 100;
+        int iterations = useConvolution ? 10 : 200;
         // Learning rate 0 will autofind an initial learning rate.
-        double learningRate = 0;
-        int batchSize = 100;
-        int iterations = 200;
+        double learningRate = useConvolution ? 1E-2 : 0;
+
+        double weightPenalty = 1E-8;
         // Threads = 0 will autofind number of processor cores in computer.
         int threads = 0;
         double inputLayerDropoutRate = 0.2;
@@ -54,7 +62,7 @@ public class NNClassificationExample {
 
         long startTime = System.currentTimeMillis();
         amten.ml.NeuralNetwork nn = new amten.ml.NeuralNetwork();
-        nn.train(xTrain, numCategories, yTrain, numClasses, hiddenUnits, weightPenalty, learningRate, batchSize, iterations, threads, inputLayerDropoutRate, hiddenLayersDropoutRate, debug, normalize);
+        nn.train(xTrain, numCategories, yTrain, numClasses, intputWidth, hiddenLayerParams, weightPenalty, learningRate, batchSize, iterations, threads, inputLayerDropoutRate, hiddenLayersDropoutRate, debug, normalize);
         System.out.println("\nTraining time: " + String.format("%.3g", (System.currentTimeMillis() - startTime) / 1000.0) + "s");
 
         int[] predictedClasses = nn.getPredictedClasses(xTrain);
@@ -114,7 +122,8 @@ public class NNClassificationExample {
         int[] numCategories = {3, 2, 1, 1, 1, 1, 3};
 
         int numClasses = 2; // 2 classes, survived/not
-        int[] hiddenUnits = { 100 };
+        int intputWidth = 0;
+        NNLayerParams[] hiddenLayerParams = { new NNLayerParams(100) };
         double weightPenalty = 1E-8;
         // Learning rate 0 will autofind an initial learning rate.
         double learningRate = 0;
@@ -129,7 +138,7 @@ public class NNClassificationExample {
 
         long startTime = System.currentTimeMillis();
         amten.ml.NeuralNetwork nn = new amten.ml.NeuralNetwork();
-        nn.train(xTrain, numCategories, yTrain, numClasses, hiddenUnits, weightPenalty, learningRate, batchSize, iterations, threads, inputLayerDropoutRate, hiddenLayersDropoutRate, debug, normalize);
+        nn.train(xTrain, numCategories, yTrain, numClasses, intputWidth, hiddenLayerParams, weightPenalty, learningRate, batchSize, iterations, threads, inputLayerDropoutRate, hiddenLayersDropoutRate, debug, normalize);
         System.out.println("\nTraining time: " + String.format("%.3g", (System.currentTimeMillis() - startTime) / 1000.0) + "s");
 
         int[] predictedClasses = nn.getPredictedClasses(xTrain);
@@ -152,7 +161,9 @@ public class NNClassificationExample {
     }
 
     public static void main(String[] args) throws Exception {
-        runKaggleDigitsClassification();
+        runKaggleDigitsClassification(false);
+        System.out.println("\n\n\n");
+        runKaggleDigitsClassification(true);
         System.out.println("\n\n\n");
         runKaggleTitanicClassification();
     }

@@ -14,7 +14,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * Neural network implementation with dropout and rectified linear units.
+ * (Convolutional) Neural network implementation with dropout and rectified linear units.
  * Can perform regression or classification.
  * Training is done by multithreaded mini-batch gradient descent with native matrix lib.
  *
@@ -28,6 +28,10 @@ public class NeuralNetwork implements Serializable{
     private boolean mySoftmax = false;
     private double myInputLayerDropoutRate = 0.0;
     private double myHiddenLayersDropoutRate = 0.0;
+    private NNLayerParams[] myLayerParams = null;
+    private int myInputWidth = 0;
+    private int myInputHeight = 0;
+
 
     private double[] myAverages = null;
     private double[] myStdDevs = null;
@@ -46,7 +50,6 @@ public class NeuralNetwork implements Serializable{
 
     /**
      * Train neural network
-     *
      * @param x Training data, input.
      *          One row for each training example.
      *          One column for each attribute.
@@ -58,7 +61,12 @@ public class NeuralNetwork implements Serializable{
      * @param y Training data, correct output.
      * @param numClasses Number of classes, if classification.
      *                   1 if regression.
-     * @param hiddenUnits Number of units in each hidden layer.
+     * @param inputWidth Width of the input.
+     *                   For convolution, we have to know the width/height of the input images. (Since they come flattened.)
+     *                   If inputWidth is set to zero, a quadratic image with equal width and height is presumed.
+                         If you are not using convolutions, this parameter is ignored.
+     * @param hiddenLayerParams Number of units in each hidden layer.
+     *                          Also, patch-size and pooling-size for convolutional layers.
      * @param weightPenalty L1 weight penalty.
      *                      Even when using dropout, it may be a good idea to have a small weight penalty, to keep weights down and avoid overflow.
      * @param learningRate Initial learning rate.
@@ -77,7 +85,7 @@ public class NeuralNetwork implements Serializable{
      * @param normalizeNumericData If true, will normalize the data in all numeric columns, by subtracting average and dividing by standard deviation.
      * @throws Exception
      */
-    public void train(Matrix x, int[] numCategories, Matrix y, int numClasses, int[] hiddenUnits, double weightPenalty, double learningRate, int batchSize, int iterations,
+    public void train(Matrix x, int[] numCategories, Matrix y, int numClasses, int inputWidth, NNLayerParams[] hiddenLayerParams, double weightPenalty, double learningRate, int batchSize, int iterations,
                       int threads, double inputLayerDropoutRate, double hiddenLayersDropoutRate, boolean debug, boolean normalizeNumericData) throws Exception {
         myNumCategories = numCategories;
         if (myNumCategories == null) {
@@ -86,6 +94,11 @@ public class NeuralNetwork implements Serializable{
         }
         myNumClasses = numClasses;
         mySoftmax = myNumClasses > 1;
+
+        // Add null params for layer 0, which is just the input and last layer, which is just output.
+        myLayerParams = new NNLayerParams[hiddenLayerParams.length+2];
+        System.arraycopy(hiddenLayerParams, 0, myLayerParams, 1, hiddenLayerParams.length);
+        myLayerParams[myLayerParams.length-1] = new NNLayerParams(myNumClasses);
 
         if (normalizeNumericData) {
             x = x.copy();
@@ -108,8 +121,23 @@ public class NeuralNetwork implements Serializable{
         x = MatrixUtils.expandNominalAttributes(x, myNumCategories);
         y = MatrixUtils.expandNominalAttributes(y, new int[] {myNumClasses} );
 
+        int inputSize = x.numColumns();
+        if (myLayerParams[1].isConvolutional()) {
+            // Convolutional network. Save width/height of input images.
+            if (inputWidth == 0) {
+                // Assume input image has equal width and height.
+                myInputWidth = (int) Math.sqrt(inputSize);
+                myInputHeight = (int) Math.sqrt(inputSize);
+            } else {
+                myInputWidth = inputWidth;
+                myInputHeight = inputSize / inputWidth;
+            }
+        } else {
+            // Non-convolutional network. Input only has one dimension (width).
+            myInputWidth = inputSize;
+        }
 
-        initThetas(x.numColumns(), hiddenUnits, y.numColumns());
+        initThetas();
         myInputLayerDropoutRate = inputLayerDropoutRate;
         myHiddenLayersDropoutRate = hiddenLayersDropoutRate;
         // If threads == 0, use the same number of threads as cores.
@@ -124,7 +152,7 @@ public class NeuralNetwork implements Serializable{
         MatrixUtils.split(x, y, batchSize, batchesX, batchesY);
         if (learningRate == 0.0) {
             // Auto-find initial learningRate.
-            learningRate = findInitialLearningRate(x, y, weightPenalty, debug);
+            learningRate = findInitialLearningRate(x, y, batchSize, weightPenalty, debug);
         }
 
         double cost = getCostThreaded(batchesX, batchesY, weightPenalty);
@@ -188,8 +216,8 @@ public class NeuralNetwork implements Serializable{
         // Expand nominal values to groups of booleans.
         x = MatrixUtils.expandNominalAttributes(x, myNumCategories);
 
-        Matrix[] activations = feedForward(x, null);
-        return activations[activations.length-1];
+        FeedForwardResult[] res = feedForward(x, null);
+        return res[res.length-1].output;
     }
 
     /**
@@ -203,7 +231,7 @@ public class NeuralNetwork implements Serializable{
         int[] predictedClasses = new int[x.numRows()];
         for (int row = 0; row < y.numRows(); row++) {
             int prediction = 0;
-            double predMaxValue = Double.MIN_VALUE;
+            double predMaxValue = -1.0;
             for (int col = 0; col < y.numColumns(); col++) {
                 if (y.get(row, col) > predMaxValue) {
                     predMaxValue = y.get(row, col);
@@ -221,86 +249,176 @@ public class NeuralNetwork implements Serializable{
 //        return a[a.length-1].getData();
 //    }
 
-    private void initThetas(int inputs, int[] hidden, int outputs) {
-        ArrayList<Integer> numNodes = new ArrayList<>();
-        numNodes.add(inputs);
-        for (int hiddenNodes:hidden) {
-            numNodes.add(hiddenNodes);
+
+    private Matrix createTheta(int rows, int cols) {
+        Matrix theta = MatrixUtils.random(rows, cols);
+        double epsilon = Math.sqrt(6)/Math.sqrt(rows + cols);
+        theta.scale(epsilon*2);
+        theta.add(-epsilon);
+
+        // Set the weight of the biases to a small positive value.
+        // This prevents rectified linear units to be stuck at a zero gradient from the beginning.
+        for (int row = 0 ; row < theta.numRows() ; row++) {
+            theta.set(row, 0, epsilon);
         }
-        numNodes.add(outputs);
+        return theta;
+    }
+
+    private void initThetas() {
+//        ArrayList<Integer> numNodes = new ArrayList<>();
+//        numNodes.add(inputs);
+//        for (int hiddenNodes:hidden) {
+//            numNodes.add(hiddenNodes);
+//        }
+//        numNodes.add(outputs);
+//
+//        ArrayList<Matrix> thetas = new ArrayList<>();
+//        for (int i = 0; i < numNodes.size()-1 ; i++) {
+//            int layerInputs = numNodes.get(i) + 1;
+//            int layerOutputs = numNodes.get(i+1);
+//            thetas.add(createTheta(layerOutputs, layerInputs));
+//        }
 
         ArrayList<Matrix> thetas = new ArrayList<>();
-        for (int i = 0; i < numNodes.size()-1 ; i++) {
-            int layerInputs = numNodes.get(i) + 1;
-            int layerOutputs = numNodes.get(i+1);
-            Matrix theta = MatrixUtils.random(layerOutputs, layerInputs);
-            double epsilon = Math.sqrt(6)/Math.sqrt(layerInputs + layerOutputs);
-            theta.scale(epsilon*2);
-            theta.add(-epsilon);
 
-            // Set the weight of the biases to a small positive value.
-            // This prevents rectified linear units to be stuck at a zero gradient from the beginning.
-            for (int row = 0 ; row < theta.numRows() ; row++) {
-                theta.set(row, 0, epsilon);
+        int numLayers = myLayerParams.length;
+
+        // Input layer has no theta.
+        thetas.add(null);
+
+        // Hidden layers
+        for (int layer = 1; layer < numLayers; layer++) {
+            if (myLayerParams[layer].isConvolutional()) {
+                int previousLayerNumFeatureMaps = layer > 1 ? myLayerParams[layer-1].numFeatures : 1;
+                int numFeatureMaps = myLayerParams[layer].numFeatures;
+                int patchSize = myLayerParams[layer].patchWidth* myLayerParams[layer].patchHeight;
+                thetas.add(createTheta(numFeatureMaps, previousLayerNumFeatureMaps*patchSize + 1));
+            } else {
+                // Meeeeh, not quite. NumFeatureMaps också.
+                // Någonting är off här, dock. Numfeaturemaps i non-conv-lager är = antalet noder.
+                // Då borde bredden på lagret vara 1 ? Jupp.
+                int layerInputs;
+                if (layer-1 == 0) {
+                    layerInputs = getWidth(0) + 1;
+                } else if (myLayerParams[layer-1].isConvolutional()) {
+                    layerInputs = myLayerParams[layer-1].numFeatures*getWidth(layer-1)*getHeight(layer-1) + 1;
+                } else {
+                    layerInputs = myLayerParams[layer-1].numFeatures + 1;
+                }
+                int layerOutputs = myLayerParams[layer].numFeatures;
+                thetas.add(createTheta(layerOutputs, layerInputs));
             }
-            thetas.add(theta);
         }
 
         myThetas = thetas.toArray(new Matrix[thetas.size()]);
     }
 
-    private Matrix[] feedForward(Matrix x, Matrix[] dropoutMasks) {
+    private FeedForwardResult[] feedForward(Matrix x, Matrix[] dropoutMasks) {
         int numExamples = x.numRows();
-        int numLayers = myThetas.length+1;
+        int numLayers = myLayerParams.length;
 
-        // Activation layers
-        Matrix[] a = new Matrix[numLayers];
-		a[0] =  x.copy();
-        if (dropoutMasks != null) {
-            a[0].multElements(dropoutMasks[0], a[0]);
-        } else if (myInputLayerDropoutRate > 0.0) {
-            a[0].scale(1.0-myInputLayerDropoutRate);
-        }
-        a[0] = MatrixUtils.addBiasColumn(a[0]);
-        for (int layer = 1; layer < numLayers ; layer++) {
-            // a[layer] = rectify(a[layer-1]*Theta[layer-1]');
-            // ? Store matrices so you don't have to recreate them each time?
-            // Meh... Creating new matrices doesn't seem too bad for performance when tested.
-            a[layer] = new Matrix(numExamples, myThetas[layer-1].numRows());
-            a[layer-1].trans2mult(myThetas[layer-1],  a[layer]);
-            if (layer < numLayers-1) {
-                MatrixUtils.rectify(a[layer]);
-                if (dropoutMasks != null) {
-                    // Dropout hidden nodes, if performing training with dropout.
-                    a[layer].multElements(dropoutMasks[layer], a[layer]);
-                } else if (myHiddenLayersDropoutRate > 0.0) {
-                    // Adjust values if training was done with dropout.
-                    a[layer].scale(1.0-myHiddenLayersDropoutRate);
+//        // Activation layers
+//        Matrix[] a = new Matrix[numLayers];
+//		a[0] =  x.copy();
+//        if (dropoutMasks != null) {
+//            a[0].multElements(dropoutMasks[0], a[0]);
+//        } else if (myInputLayerDropoutRate > 0.0) {
+//            a[0].scale(1.0-myInputLayerDropoutRate);
+//        }
+//        a[0] = MatrixUtils.addBiasColumn(a[0]);
+//        for (int layer = 1; layer < numLayers ; layer++) {
+//            // a[layer] = rectify(a[layer-1]*Theta[layer-1]');
+//            // ? Store matrices so you don't have to recreate them each time?
+//            // Meh... Creating new matrices doesn't seem too bad for performance when tested.
+//            a[layer] = new Matrix(numExamples, myThetas[layer-1].numRows());
+//            a[layer-1].trans2mult(myThetas[layer-1],  a[layer]);
+//            if (layer < numLayers-1) {
+//                MatrixUtils.rectify(a[layer]);
+//                if (dropoutMasks != null) {
+//                    // Dropout hidden nodes, if performing training with dropout.
+//                    a[layer].multElements(dropoutMasks[layer], a[layer]);
+//                } else if (myHiddenLayersDropoutRate > 0.0) {
+//                    // Adjust values if training was done with dropout.
+//                    a[layer].scale(1.0-myHiddenLayersDropoutRate);
+//                }
+//                a[layer] = MatrixUtils.addBiasColumn(a[layer]);
+//            } else if (mySoftmax) {
+//                MatrixUtils.softmax(a[layer]);
+//            }
+//        }
+
+        FeedForwardResult[] ffr = new FeedForwardResult[numLayers];
+
+        ffr[0] = new FeedForwardResult();
+        ffr[0].output = x.copy();
+        for (int layer = 1; layer < numLayers; layer++) {
+            ffr[layer] = new FeedForwardResult();
+
+            if (myLayerParams[layer].isConvolutional()) {
+                //Convolutional layer
+                int patchWidth = myLayerParams[layer].patchWidth;
+                int patchHeight = myLayerParams[layer].patchHeight;
+                int poolWidth = myLayerParams[layer].poolWidth;
+                int poolHeight = myLayerParams[layer].poolHeight;
+
+                ffr[layer].input = layer == 1 ? Convolutions.generatePatchesFromInputLayer(ffr[layer - 1].output, getWidth(layer - 1), patchWidth, patchHeight) :
+                        Convolutions.generatePatchesFromHiddenLayer(ffr[layer - 1].output, getWidth(layer - 1), getHeight(layer - 1), patchWidth, patchHeight);
+                ffr[layer].input = MatrixUtils.addBiasColumn(ffr[layer].input); // Move into generatePatches() ?
+
+                ffr[layer].output = ffr[layer].input.trans2mult(myThetas[layer]);
+
+                if (myLayerParams[layer].isPooled()) {
+                    Convolutions.PoolingResult pr = Convolutions.maxPool(ffr[layer].output, (getWidth(layer - 1) - patchWidth + 1), (getHeight(layer - 1) - patchHeight + 1), poolWidth, poolHeight);
+                    ffr[layer].numRowsPrePool = ffr[layer].output.numRows();
+                    ffr[layer].output = pr.pooledActivations;
+                    ffr[layer].prePoolRowIndexes = pr.prePoolRowIndexes;
                 }
-                a[layer] = MatrixUtils.addBiasColumn(a[layer]);
+            } else {
+                // Fully connected layer
+                if (layer > 1 && myLayerParams[layer-1].isConvolutional()) {
+                    // Reorder output from previous convolutional layer, so that all patches are columns instead of rows.
+                    int numPatches = getWidth(layer-1)*getHeight(layer-1);
+                    int numFeatureMaps = myLayerParams[layer-1].numFeatures;
+                    ffr[layer-1].output = Convolutions.movePatchesToColumns(ffr[layer - 1].output, numExamples, numFeatureMaps, numPatches);
+                }
+                if (dropoutMasks != null && dropoutMasks[layer-1] != null) {
+                    // Dropout hidden nodes, if performing training with dropout.
+                    ffr[layer-1].output.multElements(dropoutMasks[layer - 1], ffr[layer - 1].output);
+                } else {
+                    double dropoutRate = layer-1 == 0 ? myInputLayerDropoutRate : myHiddenLayersDropoutRate;
+                    if (dropoutRate > 0.0) {
+                        // Adjust values if training was done with dropout.
+                        ffr[layer-1].output.scale(1.0 - dropoutRate);
+                    }
+                }
+                ffr[layer].input = MatrixUtils.addBiasColumn(ffr[layer-1].output);
+                ffr[layer].output = ffr[layer].input.trans2mult(myThetas[layer]);
+            }
+            if (layer < numLayers-1) {
+                MatrixUtils.rectify(ffr[layer].output);
             } else if (mySoftmax) {
-                MatrixUtils.softmax(a[layer]);
+                MatrixUtils.softmax(ffr[layer].output);
             }
         }
 
-		return a;
-	}
+        return ffr;
+    }
 
     private int numberOfNodes() {
         int nodes = 0;
-        for (Matrix theta:myThetas) {
-            nodes += (theta.numColumns() - 1)* theta.numRows();
+        for (int t = 1; t < myThetas.length; t++) {
+            nodes += (myThetas[t].numColumns() - 1)* myThetas[t].numRows();
         }
         return nodes;
     }
 
-	private double getCost(Matrix x, Matrix y, double weightPenalty, int batchSize) {
+    private double getCost(Matrix x, Matrix y, double weightPenalty, int batchSize) {
         double c = 0.0;
 
-		Matrix[] a = feedForward(x, null);
-        Matrix h = a[a.length-1];
+        FeedForwardResult[] ffr = feedForward(x, null); //Can't use getPredictions because of normalization.
+        Matrix h = ffr[ffr.length-1].output;
 
-		if (mySoftmax) {
+        if (mySoftmax) {
             for (int row = 0; row < y.numRows(); row++) {
                 for (int col = 0; col < y.numColumns(); col++) {
                     if (y.get(row, col) > 0.99) {
@@ -310,31 +428,31 @@ public class NeuralNetwork implements Serializable{
             }
             // Have to use batch size and not number of rows, in case that the last batch contains fewer examples.
             c = c/batchSize;
-		} else {
-			// t1=(h-y).*(h-y)
-			Matrix t1 = h.copy().add(-1,  y);
-			t1.multElements(t1, t1);
+        } else {
+            // t1=(h-y).*(h-y)
+            Matrix t1 = h.copy().add(-1,  y);
+            t1.multElements(t1, t1);
             // sum = sum(sum(t1))
             for (MatrixElement me: t1) {
                 c += me.value();
             }
             // Have to use batch size and not number of rows, in case that the last batch contains fewer examples.
             c = c/(2*batchSize);
-		}
+        }
 
         if (weightPenalty > 0) {
             // Regularization
             double regSum = 0.0;
-            for (Matrix theta:myThetas) {
-                for (MatrixElement me: theta.getColumns(1, -1)) {
+            for (int t = 1; t < myThetas.length; t++) {
+                for (MatrixElement me: myThetas[t].getColumns(1, -1)) {
                     regSum += Math.abs(me.value());
                 }
             }
             c += regSum*weightPenalty/numberOfNodes();
         }
-	    
-	    return c;
-	}
+
+        return c;
+    }
 
     private double getCostThreaded(List<Matrix> batchesX, List<Matrix> batchesY, final double weightPenalty) throws Exception {
         final int batchSize = batchesX.get(0).numRows();
@@ -363,43 +481,57 @@ public class NeuralNetwork implements Serializable{
         return cost;
     }
 
-	private Matrix[] getGradients(Matrix x, Matrix y, double weightPenalty, Matrix[] dropoutMasks, int batchSize) {
+    private Matrix[] getGradients(Matrix x, Matrix y, double weightPenalty, Matrix[] dropoutMasks, int batchSize) {
 
-        int numLayers = myThetas.length+1;
+        int numLayers = myLayerParams.length;
+        int numExamples = x.numRows();
 
         // Feed forward and save activations for each layer
-        Matrix[] a = feedForward(x, dropoutMasks);
+        FeedForwardResult[] ffr = feedForward(x, dropoutMasks);
 
-        // Deltas for each layer. (delta for input layer will be left empty)
         Matrix[] delta = new Matrix[numLayers];
         // Start with output layer and then work backwards.
         // delta[numlayers-1] = a[numLayers-1]-y;
         // (delta[numLayers-1] dim is numExamples*output nodes)
-        delta[numLayers-1] = a[numLayers-1].copy().add(-1, y);
-        for (int layer = numLayers - 2; layer > 0 ; layer--) {
-            // delta[layer] = (delta[layer+1]*Theta[layer])(:, 2:end).*rectifyGradient(a[layer-1]*Theta[layer-1]');
-            // (delta[layer] dim is examples*nodes in layer)
-            delta[layer] = delta[layer+1].mult(myThetas[layer]).getColumns(1, -1);
-            delta[layer].multElements(MatrixUtils.rectifyGradient(a[layer-1].trans2mult(myThetas[layer-1])), delta[layer]);
-            if (dropoutMasks != null) {
+        delta[numLayers-1] = ffr[numLayers-1].output.copy().add(-1, y);
+
+        for (int layer = numLayers-2; layer >=1; layer--) {
+            delta[layer] = delta[layer+1].mult(myThetas[layer+1]).getColumns(1, -1);
+            if (dropoutMasks != null && dropoutMasks[layer] != null) {
                 delta[layer].multElements(dropoutMasks[layer], delta[layer]);
             }
+            if (myLayerParams[layer].isConvolutional()) {
+                // Convolutional layer.
+                int numFeatureMaps = myLayerParams[layer].numFeatures;
+                int patchWidth = myLayerParams[layer].patchWidth;
+                int patchHeight = myLayerParams[layer].patchHeight;
+                if (layer == numLayers-2) {
+                    int numPatches = getWidth(layer)*getHeight(layer);
+                    delta[layer] = Convolutions.movePatchesToRows(delta[layer], numExamples, numFeatureMaps, numPatches);
+                } else {
+                    delta[layer] = Convolutions.antiPatchDeltas(delta[layer], getWidth(layer), getHeight(layer), patchWidth, patchHeight);
+                }
+                if (myLayerParams[layer].isPooled()) {
+                    delta[layer] = Convolutions.antiPoolDelta(delta[layer], ffr[layer].prePoolRowIndexes, ffr[layer].numRowsPrePool);
+                }
+            }
+            delta[layer].multElements(MatrixUtils.rectifyGradient(ffr[layer].input.trans2mult(myThetas[layer])), delta[layer]);
         }
 
         // Compute gradients for each theta
-        Matrix[] thetaGrad = new Matrix[numLayers-1];
-        for (int layer = 0 ; layer < numLayers-1 ; layer++) {
+        Matrix[] thetaGrad = new Matrix[numLayers];
+        for (int layer = 1; layer < numLayers; layer++) {
             // thetaGrad[layer] = delta[layer+1]'*a[layer];
             // (thetaGrad[layer] dim is nodes in a[layer+1]*nodes in a[layer])
-            thetaGrad[layer] = delta[layer+1].trans1mult(a[layer]);
+            thetaGrad[layer] = delta[layer].trans1mult(ffr[layer].input);
             // Have to use batch size and not number of rows, in case that the last batch contains fewer examples.
-            thetaGrad[layer].scale(1.0/batchSize);
+            thetaGrad[layer].scale(1.0 / batchSize);
         }
 
         if (weightPenalty > 0) {
             // Add regularization terms
             int numNodes = numberOfNodes();
-            for (int thetaNr = 0; thetaNr < numLayers-1 ; thetaNr++) {
+            for (int thetaNr = 1; thetaNr < numLayers ; thetaNr++) {
                 Matrix theta = myThetas[thetaNr];
                 Matrix grad = thetaGrad[thetaNr];
                 for (int row = 0; row < grad.numRows() ; row++) {
@@ -411,25 +543,35 @@ public class NeuralNetwork implements Serializable{
             }
         }
 
-		return thetaGrad;
-	}
+        return thetaGrad;
+    }
 
-    private Matrix[] generateDropoutMasks(int examples) {
+    private Matrix[] generateDropoutMasks(int numExamples) {
         // Create own random generator instead of making calls to Math.random from each thread, which would block each other.
         Random rnd = new Random();
 
-        Matrix[] masks = new Matrix[myThetas.length];
-        for (int i = 0; i < masks.length ; i++) {
-            Matrix mask = new Matrix(examples, myThetas[i].numColumns()-1);
-            double dropoutRate = i == 0 ? myInputLayerDropoutRate : myHiddenLayersDropoutRate;
-            for (MatrixElement me : mask) {
-                me.set(rnd.nextDouble() > dropoutRate ? 1.0 : 0.0);
+        int numLayers = myLayerParams.length;
+        // Don't dropout output layer.
+        Matrix[] masks = new Matrix[numLayers-1];
+
+        for (int l = 0; l < masks.length ; l++) {
+            // Don't dropout input to convolutional layers.
+            if (!myLayerParams[l+1].isConvolutional()) {
+                if ((l == 0 && myInputLayerDropoutRate > 0) || (l > 0 && myHiddenLayersDropoutRate > 0)) {
+                    int numColumns = l == 0 ? getWidth(0) : myLayerParams[l].numFeatures*getWidth(l)*getHeight(l);
+                    Matrix mask = new Matrix(numExamples, numColumns);
+                    double dropoutRate = l == 0 ? myInputLayerDropoutRate : myHiddenLayersDropoutRate;
+                    for (MatrixElement me : mask) {
+                        me.set(rnd.nextDouble() > dropoutRate ? 1.0 : 0.0);
+                    }
+                    masks[l] = mask;
+                }
             }
-            masks[i] = mask;
         }
+
         return masks;
     }
-	
+
     private void trainOneIterationThreaded(List<Matrix> batchesX, List<Matrix> batchesY, final double learningRate, final double weightPenalty) throws Exception {
         final int batchSize = batchesX.get(0).numRows();
 
@@ -447,7 +589,7 @@ public class NeuralNetwork implements Serializable{
                     Matrix[] gradients = getGradients(bx, by, weightPenalty, dropoutMasks, batchSize);
                     myThetasLock.readLock().unlock();
                     myThetasLock.writeLock().lock();
-                    for (int theta = 0; theta < myThetas.length; theta++) {
+                    for (int theta = 1; theta < myThetas.length; theta++) {
                         myThetas[theta].add(-learningRate, gradients[theta]);
                     }
                     myThetasLock.writeLock().unlock();
@@ -465,14 +607,13 @@ public class NeuralNetwork implements Serializable{
     private Matrix[] deepCopy(Matrix[] ms) {
         Matrix[] res = new Matrix[ms.length];
         for (int i = 0; i < res.length ; i++) {
-            res[i] = ms[i].copy();
+            res[i] = ms[i] != null ? ms[i].copy() : null;
         }
         return res;
     }
 
-    private double findInitialLearningRate(Matrix x, Matrix y, double weightPenalty, boolean debug) throws Exception {
+    private double findInitialLearningRate(Matrix x, Matrix y, int batchSize, double weightPenalty, boolean debug) throws Exception {
         int numUsedTrainingExamples = 5000;
-        int batchSize = 100;
         int numBatches = numUsedTrainingExamples/batchSize;
 
         List<Matrix> batchesX = new ArrayList<>();
@@ -493,7 +634,7 @@ public class NeuralNetwork implements Serializable{
         double cost = getCostThreaded(batchesX, batchesY, weightPenalty);
         if (debug) {
             System.out.println("\n\nAuto-finding learning rate.");
-            System.out.println("Learning rate: " + String.format("%.1E", lr) + " Cost: " + cost); ////////////////////////////
+            System.out.println("Learning rate: " + String.format("%.1E", lr) + " Cost: " + cost);
         }
         myThetas = deepCopy(startThetas);
         double lastCost = Double.MAX_VALUE;
@@ -505,7 +646,7 @@ public class NeuralNetwork implements Serializable{
             trainOneIterationThreaded(batchesX, batchesY, lr, weightPenalty);
             cost = getCostThreaded(batchesX, batchesY, weightPenalty);
             if (debug) {
-                System.out.println("Learning rate: " + String.format("%.1E", lr) + " Cost: " + cost); ////////////////////////////
+                System.out.println("Learning rate: " + String.format("%.1E", lr) + " Cost: " + cost);
             }
             myThetas = deepCopy(startThetas);
         }
@@ -516,5 +657,45 @@ public class NeuralNetwork implements Serializable{
         return lastLR;
     }
 
+    private int getWidth(int layer) {
+        if (layer > 0 && !myLayerParams[layer].isConvolutional()) {
+            return 1;
+        }
+
+        int width = myInputWidth;
+        for (int l = 1; l <= layer; l++) {
+            // Calc number of patch-rows next layer will have. Convolution and pooling.
+            int patchWidth = myLayerParams[l].patchWidth;
+            int poolWidth = myLayerParams[l].poolWidth;
+            width = width-patchWidth+1;
+            width = width%poolWidth == 0 ? width/poolWidth :
+                                            width/poolWidth + 1;
+        }
+        return width;
+    }
+
+    private int getHeight(int layer) {
+        if (layer > 0 && !myLayerParams[layer].isConvolutional()) {
+            return 1;
+        }
+
+        int height = myInputHeight;
+        for (int l = 1; l <= layer; l++) {
+            // Calc number of patch-rows next layer will have. Convolution and pooling.
+            int patchHeight = myLayerParams[l].patchHeight;
+            int poolHeight = myLayerParams[l].poolHeight;
+            height = height-patchHeight+1;
+            height = height%poolHeight == 0 ? height/poolHeight :
+                                                height/poolHeight + 1;
+        }
+        return height;
+    }
+
+    private static class FeedForwardResult {
+        public Matrix input = null;
+        public Matrix output = null;
+        public Matrix prePoolRowIndexes = null;
+        public int numRowsPrePool = 0;
+    }
 
 }

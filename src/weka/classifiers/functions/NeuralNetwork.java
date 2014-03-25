@@ -1,5 +1,6 @@
 package weka.classifiers.functions;
 
+import amten.ml.NNLayerParams;
 import amten.ml.matrix.Matrix;
 import amten.ml.matrix.MatrixElement;
 import amten.ml.matrix.MatrixUtils;
@@ -14,7 +15,7 @@ import java.util.Enumeration;
 /**
  * Weka Classifier wrapper around NeuralNetwork class.
  *
- * Neural network implementation with dropout and rectified linear units.
+ * (Convolutional) Neural network implementation with dropout and rectified linear units.
  * Can perform regression or classification.
  * Training is done by multithreaded mini-batch gradient descent with native matrix lib.
 
@@ -27,12 +28,13 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
     // Classifier parameters
     private double myWeightPenalty = 1E-8;
     private double myLearningRate = 0.0;
-    private int[] myHiddenUnits = { 100 };
+    private NNLayerParams[] myHiddenLayers = { new NNLayerParams(100) };
     private int myBatchSize = 100;
     private int myIterations = 200;
     private int myThreads = 0;
     private double myInputLayerDropoutRate = 0.2;
     private double myHiddenLayersDropoutRate = 0.5;
+    private int myInputWidth = 0;
 
     // Model
     private amten.ml.NeuralNetwork myNN = null;
@@ -83,7 +85,7 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
         }
 
         myNN = new amten.ml.NeuralNetwork();
-        myNN.train(x, numCategories, y, numClasses, myHiddenUnits, myWeightPenalty, myLearningRate, myBatchSize, myIterations, myThreads, myInputLayerDropoutRate, myHiddenLayersDropoutRate, getDebug(), true);
+        myNN.train(x, numCategories, y, numClasses, myInputWidth, myHiddenLayers, myWeightPenalty, myLearningRate, myBatchSize, myIterations, myThreads, myInputLayerDropoutRate, myHiddenLayersDropoutRate, getDebug(), true);
     }
 
     public double[] distributionForInstance(Instance instance) throws Exception {
@@ -133,14 +135,20 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
                 "\tNumber of threads to use for training the network.",
                 "Threads", 1, "-t"));
         options.add(new Option(
-                "\tNumber of Units in the hidden layers. (comma-separated list)",
-                "HiddenUnits", 1, "-hu"));
+                "\tNumber of Units in the hidden layers. (comma-separated list)\n" +
+                "e.g. \"100,100\" for two layers with 100 units each.\n" +
+                "For convolutional layers: <num feature maps>-<patch-width>-<patch-height>-<pool-width>-<pool-height> \n" +
+                "e.g. \"20-5-5-2-2,100-5-5-2-2\" for two convolutional layers, both with patch size 5x5 and pool size 2x2, each with 20 and 100 feature maps respectively.",
+                "HiddenLayers", 1, "-hl"));
         options.add(new Option(
                 "\tFraction of units to dropout in the input layer during training.",
                 "InputLayerDropoutRate", 1, "-di"));
         options.add(new Option(
                 "\tFraction of units to dropout in the hidden layers during training.",
                 "HiddenLayersDropoutRate", 1, "-dh"));
+        options.add(new Option(
+                "\tWidth of input image (only used for convolution) (0=Square image).",
+                "InputWidth", 1, "-iw"));
 
         return Collections.enumeration(options);
     }
@@ -157,12 +165,14 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
         myThreads = threadsString.equals("t") ? 0 : Integer.parseInt(threadsString);
         String batchSizeString = Utils.getOption("bs", options);
         myBatchSize = batchSizeString.equals("") ? 100 : Integer.parseInt(batchSizeString);
-        String hiddenUnitsString = Utils.getOption("hu", options);
-        myHiddenUnits = hiddenUnitsString.equals("") ? new int[] { 50, 50}  : getIntList(hiddenUnitsString);
+        String hiddenLayersString = Utils.getOption("hl", options);
+        myHiddenLayers = hiddenLayersString.equals("") ? new NNLayerParams[] { new NNLayerParams(100) }  : getHiddenLayers(hiddenLayersString);
         String inputLayerDropoutRateString = Utils.getOption("di", options);
         myInputLayerDropoutRate = inputLayerDropoutRateString.equals("") ? 0.2 : Double.parseDouble(inputLayerDropoutRateString);
         String hiddenLayersDropoutRateString = Utils.getOption("dh", options);
         myHiddenLayersDropoutRate = hiddenLayersDropoutRateString.equals("") ? 0.5 : Double.parseDouble(hiddenLayersDropoutRateString);
+        String inputWidthString = Utils.getOption("iw", options);
+        myInputWidth = inputWidthString.equals("") ? 0 : Integer.parseInt(inputWidthString);
     }
 
     public String [] getOptions() {
@@ -177,12 +187,15 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
         options.add(Integer.toString(myBatchSize));
         options.add("-t");
         options.add(Integer.toString(myThreads));
-        options.add("-hu");
-        options.add(getString(myHiddenUnits));
+        options.add("-hl");
+        options.add(getString(myHiddenLayers));
         options.add("-di");
         options.add(Double.toString(myInputLayerDropoutRate));
         options.add("-dh");
         options.add(Double.toString(myHiddenLayersDropoutRate));
+        options.add("-iw");
+        options.add(Integer.toString(myInputWidth));
+
         return options.toArray(new String[options.size()]);
     }
 
@@ -196,14 +209,14 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
         return "Weight penalty parameter.";
     }
 
-    public String getHiddenUnits() {
-        return getString(myHiddenUnits);
+    public String getHiddenLayers() {
+        return getString(myHiddenLayers);
     }
-    public void setHiddenUnits(String hiddenUnits) {
-        myHiddenUnits = getIntList(hiddenUnits);
+    public void setHiddenLayers(String hiddenLayers) {
+        myHiddenLayers = getHiddenLayers(hiddenLayers);
     }
-    public String hiddenUnitsTipText() {
-        return "Number of units in each hidden layer (comma-separated).";
+    public String hiddenLayersTipText() {
+        return "Number of units in each hidden layer (comma-separated) (For convolutional layers: <num feature maps>-<patch-width>-<patch-height>-<pool-width>-<pool-height>).";
     }
 
     public int getIterations() {
@@ -243,7 +256,7 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
         myBatchSize = batchSize;
     }
     public String batchSizeTipText() {
-        return "Number of training examples in each mini-batch.";
+        return "Number of training examples in each mini-batch (=1 recommended for convolutional networks) .";
     }
 
     public int getThreads() {
@@ -266,6 +279,15 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
         return "Learning rate (0=Auto-detect).";
     }
 
+    public int getInputWidth() {
+        return myInputWidth;
+    }
+    public void setInputWidth(int width) {
+        myInputWidth = width;
+    }
+    public String inputWidthTipText() {
+        return "Width of input image (only used for convolution) (0=Square image).";
+    }
 
     /**
      * Returns default capabilities of the classifier.
@@ -291,31 +313,54 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
         return result;
     }
 
-    private int[] getIntList(String s) {
+    private NNLayerParams[] getHiddenLayers(String s) {
         String[] stringList = s.split(",");
-        int[] intList = new int[stringList.length];
-        for (int i = 0; i < stringList.length ; i++) {
-            String intString = stringList[i];
-            intList[i] = intString.equals("") ? 0 : Integer.parseInt(intString);
+        ArrayList<NNLayerParams> layerList = new ArrayList<>();
+        for (String layerString:stringList) {
+            if (layerString.contains("-")) {
+                // Convolutional layer
+                String[] convStringList = layerString.split("-");
+                if (convStringList.length >=3) {
+                    int numFeatureMaps = Integer.parseInt(convStringList[0]);
+                    int patchWidth = Integer.parseInt(convStringList[1]);
+                    int patchHeight = Integer.parseInt(convStringList[2]);
+                    int poolWidth = convStringList.length > 4 ? Integer.parseInt(convStringList[3]) : 0;
+                    int poolHeight = convStringList.length > 4 ? Integer.parseInt(convStringList[4]) : 0;
+                    layerList.add(new NNLayerParams(numFeatureMaps, patchWidth, patchHeight, poolWidth, poolHeight));
+                }
+            } else if (!layerString.equals("")) {
+                layerList.add(new NNLayerParams(Integer.parseInt(layerString)));
+            }
         }
-        return intList;
+        return layerList.toArray(new NNLayerParams[layerList.size()]);
     }
 
-    private String getString(int[] intList) {
+    private String getString(NNLayerParams[] layerList) {
         String s = "";
-        for (int i: intList) {
+        for (NNLayerParams layer: layerList) {
             if (!s.equals("")) {
                 s += ",";
             }
-            s += i;
+            if (layer.isConvolutional()) {
+                s += layer.numFeatures + "-" + layer.patchWidth + "-" + layer.patchHeight;
+                if (layer.isPooled()) {
+                    s += "-" + layer.poolWidth + "-" + layer.poolHeight;
+                }
+            } else {
+                s += layer.numFeatures;
+            }
         }
         return s;
     }
 
     public String globalInfo() {
-        return "Neural Network implementation with dropout regularization and Rectified Linear Units.\n" +
-                "Training is done with multithreaded mini-batch gradient descent.\n" +
-                "Running Weka with console window and with debug flag for this classifier on, you can monitor training cost in console window and halt training anytime by pressing enter.";
+        return "(Convolutional) Neural Network implementation with dropout regularization and Rectified Linear Units.\n\n" +
+                "Training is done with multithreaded mini-batch gradient descent.\n\n" +
+                "Running Weka with console window and with debug flag for this classifier on, you can monitor training cost in console window and halt training anytime by pressing enter.\n\n" +
+                "Hidden layers are specified as comma-separated lists.\n" +
+                "e.g. \"100,100\" for two layers with 100 units each.\n" +
+                "For convolutional layers: <num feature maps>-<patch-width>-<patch-height>-<pool-width>-<pool-height> \n" +
+                "e.g. \"20-5-5-2-2,100-5-5-2-2\" for two convolutional layers, both with patch size 5x5 and pool size 2x2, each with 20 and 100 feature maps respectively.";
     }
 
 }
