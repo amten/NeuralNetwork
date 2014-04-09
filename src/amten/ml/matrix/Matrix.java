@@ -21,6 +21,7 @@ public class Matrix implements Iterable<MatrixElement>, Serializable {
 
     private DenseMatrix myMatrix;
 
+
     public Matrix (int numRows, int numColumns) {
         myMatrix = new DenseMatrix(numRows, numColumns);
     }
@@ -60,7 +61,7 @@ public class Matrix implements Iterable<MatrixElement>, Serializable {
     }
 
     public double[] getCol(int col) {
-        double[] data = new double[numColumns()];
+        double[] data = new double[numRows()];
         for (int row = 0; row < numRows(); row++) {
             data[row] = get(row, col);
         }
@@ -177,9 +178,20 @@ public class Matrix implements Iterable<MatrixElement>, Serializable {
     }
 
     public Matrix getColumns(int startCol, int endCol) {
-        int modEndCol = endCol==-1 ? numColumns()-1 : endCol;
-        Matrix m2 = new Matrix(numRows(), modEndCol-startCol+1);
+        endCol = endCol==-1 ? numColumns()-1 : endCol;
+        Matrix m2 = new Matrix(numRows(), endCol-startCol+1);
         System.arraycopy(myMatrix.getData(), startCol*numRows(), m2.getData(), 0, m2.getData().length);
+        return m2;
+    }
+
+    public Matrix getRows(int startRow, int endRow) {
+        endRow = endRow==-1 ? numRows()-1 : endRow;
+        Matrix m2 = new Matrix(endRow-startRow+1, numColumns());
+        for (int row = 0; row < m2.numRows(); row++) {
+            for (int col = 0; col < m2.numColumns(); col++) {
+                m2.set(row, col, get(row+startRow, col));
+            }
+        }
         return m2;
     }
 
