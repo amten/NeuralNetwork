@@ -18,7 +18,8 @@ import java.util.Enumeration;
  * (Convolutional) Neural network implementation with dropout and rectified linear units.
  * Can perform regression or classification.
  * Training is done by multithreaded mini-batch gradient descent with native matrix lib.
-
+ *
+ * @author Johannes Amtén
  *
  */
 
@@ -84,8 +85,10 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
             }
         }
 
+        int inputChannels = 1;
+
         myNN = new amten.ml.NeuralNetwork();
-        myNN.train(x, numCategories, y, numClasses, myInputWidth, myHiddenLayers, myWeightPenalty, myLearningRate, myBatchSize, myIterations, myThreads, myInputLayerDropoutRate, myHiddenLayersDropoutRate, getDebug(), true);
+        myNN.train(x, numCategories, y, numClasses, inputChannels, myInputWidth, myHiddenLayers, myWeightPenalty, myLearningRate, myBatchSize, myIterations, myThreads, myInputLayerDropoutRate, myHiddenLayersDropoutRate, getDebug(), true);
     }
 
     public double[] distributionForInstance(Instance instance) throws Exception {

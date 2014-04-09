@@ -44,6 +44,7 @@ public class NNClassificationExample {
 
         int[] numCategories = null; // Just numeric indata, no nominal attributes.
         int numClasses = 10; // 10 digits to classify
+        int inputChannels = 1;
         int intputWidth = 0;
         NNLayerParams[] hiddenLayerParams = useConvolution ? new NNLayerParams[]{ new NNLayerParams(20, 5, 5, 2, 2) , new NNLayerParams(100, 5, 5, 2, 2) } :
                                                             new NNLayerParams[] { new NNLayerParams(100) };
@@ -62,7 +63,7 @@ public class NNClassificationExample {
 
         long startTime = System.currentTimeMillis();
         amten.ml.NeuralNetwork nn = new amten.ml.NeuralNetwork();
-        nn.train(xTrain, numCategories, yTrain, numClasses, intputWidth, hiddenLayerParams, weightPenalty, learningRate, batchSize, iterations, threads, inputLayerDropoutRate, hiddenLayersDropoutRate, debug, normalize);
+        nn.train(xTrain, numCategories, yTrain, numClasses, inputChannels, intputWidth, hiddenLayerParams, weightPenalty, learningRate, batchSize, iterations, threads, inputLayerDropoutRate, hiddenLayersDropoutRate, debug, normalize);
         System.out.println("\nTraining time: " + String.format("%.3g", (System.currentTimeMillis() - startTime) / 1000.0) + "s");
 
         int[] predictedClasses = nn.getPredictedClasses(xTrain);
@@ -122,6 +123,7 @@ public class NNClassificationExample {
         int[] numCategories = {3, 2, 1, 1, 1, 1, 3};
 
         int numClasses = 2; // 2 classes, survived/not
+        int inputChannels = 1;
         int intputWidth = 0;
         NNLayerParams[] hiddenLayerParams = { new NNLayerParams(100) };
         double weightPenalty = 1E-8;
@@ -138,7 +140,7 @@ public class NNClassificationExample {
 
         long startTime = System.currentTimeMillis();
         amten.ml.NeuralNetwork nn = new amten.ml.NeuralNetwork();
-        nn.train(xTrain, numCategories, yTrain, numClasses, intputWidth, hiddenLayerParams, weightPenalty, learningRate, batchSize, iterations, threads, inputLayerDropoutRate, hiddenLayersDropoutRate, debug, normalize);
+        nn.train(xTrain, numCategories, yTrain, numClasses, inputChannels, intputWidth, hiddenLayerParams, weightPenalty, learningRate, batchSize, iterations, threads, inputLayerDropoutRate, hiddenLayersDropoutRate, debug, normalize);
         System.out.println("\nTraining time: " + String.format("%.3g", (System.currentTimeMillis() - startTime) / 1000.0) + "s");
 
         int[] predictedClasses = nn.getPredictedClasses(xTrain);

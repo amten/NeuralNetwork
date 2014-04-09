@@ -62,7 +62,7 @@ public class Convolutions {
         return result;
     }
 
-    public static Matrix generatePatchesFromInputLayer(Matrix inputs, int inputWidth, int patchWidth, int patchHeight) {
+    public static Matrix generatePatchesFromInputLayer(Matrix inputs, int inputWidth, int inputHeight, int patchWidth, int patchHeight) {
         // Input data has one row per example.
         // Input data has one column per pixel.
         //      Assumes pixel-numbers are generated row-wise.
@@ -71,20 +71,22 @@ public class Convolutions {
         // Output data have one row per example/patch
         // Output data have one column per patchPixel.
 
-        int inputHeight = inputs.numColumns() / inputWidth;
+        int numChannels = inputs.numColumns() / (inputWidth*inputHeight);
         int numPatchesPerExample = (inputWidth-patchWidth+1)*(inputHeight-patchHeight+1);
         int numExamples = inputs.numRows();
-        Matrix output = new Matrix(numExamples*numPatchesPerExample, patchWidth*patchHeight);
+        Matrix output = new Matrix(numExamples*numPatchesPerExample, numChannels*patchWidth*patchHeight);
         for (int example = 0; example < numExamples; example++) {
             int patchNum = 0;
             for (int inputStartY = 0; inputStartY < inputHeight-patchHeight+1; inputStartY++) {
                 for (int inputStartX = 0; inputStartX < inputWidth-patchWidth+1; inputStartX++) {
-                    for (int patchPixelY = 0; patchPixelY < patchHeight; patchPixelY++) {
-                        for (int patchPixelX = 0; patchPixelX < patchWidth; patchPixelX++) {
-                            int inputY = inputStartY + patchPixelY;
-                            int inputX = inputStartX + patchPixelX;
-                            double value = inputs.get(example, inputY*inputWidth + inputX);
-                            output.set(example*numPatchesPerExample + patchNum, patchPixelY*patchWidth + patchPixelX, value);
+                    for (int channel = 0; channel < numChannels; channel++) {
+                        for (int patchPixelY = 0; patchPixelY < patchHeight; patchPixelY++) {
+                            for (int patchPixelX = 0; patchPixelX < patchWidth; patchPixelX++) {
+                                int inputY = inputStartY + patchPixelY;
+                                int inputX = inputStartX + patchPixelX;
+                                double value = inputs.get(example, channel*inputHeight*inputWidth + inputY*inputWidth + inputX);
+                                output.set(example*numPatchesPerExample + patchNum, channel*patchHeight*patchWidth + patchPixelY*patchWidth + patchPixelX, value);
+                            }
                         }
                     }
                     patchNum++;

@@ -40,6 +40,7 @@ public class NeuralNetworkTest {
         Matrix yCV = dataCV.getColumns(0, 0);
 
         int numClasses = 10; // 10 digits to classify
+        int inputChannels = 1;
         int intputWidth = 0;
         NNLayerParams[] hiddenLayerParams = { new NNLayerParams(20, 5, 5, 2, 2) , new NNLayerParams(100, 5, 5, 2, 2) };
         double weightPenalty = 1E-8;
@@ -56,7 +57,7 @@ public class NeuralNetworkTest {
 
         long startTime = System.currentTimeMillis();
         amten.ml.NeuralNetwork nn = new amten.ml.NeuralNetwork();
-        nn.train(xTrain, null, yTrain, numClasses, intputWidth, hiddenLayerParams, weightPenalty, learningRate, batchSize, iterations, threads, inputLayerDropoutRate, hiddenLayersDropoutRate, debug, normalize);
+        nn.train(xTrain, null, yTrain, numClasses, inputChannels, intputWidth, hiddenLayerParams, weightPenalty, learningRate, batchSize, iterations, threads, inputLayerDropoutRate, hiddenLayersDropoutRate, debug, normalize);
         System.out.println("Training time: " + (System.currentTimeMillis() - startTime) / 1000.0 + "s");
 
         List<Matrix> batchesX = new ArrayList<>();
