@@ -1,10 +1,9 @@
 package amten.ml.matrix;
 
 import au.com.bytecode.opencsv.CSVReader;
+import au.com.bytecode.opencsv.CSVWriter;
 
-import java.io.BufferedReader;
-import java.io.FileReader;
-import java.io.IOException;
+import java.io.*;
 import java.util.*;
 
 
@@ -45,6 +44,23 @@ public class MatrixUtils {
 		}
 		return m;
 	}
+
+    public static void writeCSV(Matrix m, String filename) throws IOException {
+        BufferedWriter bw = new BufferedWriter(new FileWriter(filename));
+        CSVWriter cw = new CSVWriter(bw, ',', CSVWriter.NO_QUOTE_CHARACTER);
+
+        ArrayList<String[]> rows = new ArrayList<>();
+        for (int row = 0; row < m.numRows(); row++) {
+            String[] rowValues = new String[m.numColumns()];
+            for (int col = 0; col < m.numColumns(); col++) {
+                rowValues[col] = Double.toString(m.get(row, col));
+            }
+            rows.add(rowValues);
+        }
+        cw.writeAll(rows);
+        cw.close();
+        bw.close();
+    }
 
     public static Matrix random(int rows, int cols) {
         // Create own random generator instead of making calls to Math.random from each thread, which would block each other.
@@ -284,6 +300,27 @@ public class MatrixUtils {
         return m;
     }
 
+    public static Matrix[] softMaxJacobians(Matrix m) {
+        Matrix h = softmax(m.copy());
+        // One output matrix (Jacobian) for each example (input row).
+        Matrix[] results = new Matrix[m.numRows()];
+        for (int example = 0; example < m.numRows(); example++) {
+            Matrix res = new Matrix(m.numColumns(), m.numColumns());
+
+            // Jacobian has:
+            // One row for each (softmax) value whos gradient is taken.
+            // One columns for each (softmax) value whos change the gradient is taken in respect to.
+            for (MatrixElement me:res) {
+                int row = me.row();
+                int col = me.col();
+                double delta = col == row ? 1.0 : 0.0;
+                me.set(h.get(example, row)*(delta-h.get(example, col)));
+            }
+
+            results[example] = res;
+        }
+        return results;
+    }
 
 	public static Matrix sigmoidGradient(Matrix m) {
 		// sigmoid(m).*(1-sigmoid(m))
