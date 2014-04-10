@@ -1,9 +1,7 @@
 package amten.ml.test;
 
-import amten.ml.NNLayerParams;
-import amten.ml.NeuralNetwork;
+import amten.ml.NNParams;
 import amten.ml.matrix.Matrix;
-import amten.ml.matrix.MatrixElement;
 import amten.ml.matrix.MatrixUtils;
 
 import java.util.ArrayList;
@@ -39,30 +37,21 @@ public class NeuralNetworkTest {
         Matrix xCV = dataCV.getColumns(1, -1);
         Matrix yCV = dataCV.getColumns(0, 0);
 
-        int numClasses = 10; // 10 digits to classify
-        int inputChannels = 1;
-        int intputWidth = 0;
-        NNLayerParams[] hiddenLayerParams = { new NNLayerParams(20, 5, 5, 2, 2) , new NNLayerParams(100, 5, 5, 2, 2) };
-        double weightPenalty = 1E-8;
-        // Learning rate 0 will autofind an initial learning rate.
-        double learningRate = 1E-2;
-        int batchSize = 1;
-        int iterations = 10;
-        // Threads = 0 will autofind number of processor cores in computer.
-        int threads = 0;
-        double inputLayerDropoutRate = 0.2;
-        double hiddenLayersDropoutRate = 0.5;
-        boolean debug = true;
-        boolean normalize = true;
+        NNParams params = new NNParams();
+        params.numClasses = 10; // 10 digits to classify
+        params.hiddenLayerParams = new NNParams.NNLayerParams[] { new NNParams.NNLayerParams(20, 5, 5, 2, 2) , new NNParams.NNLayerParams(100, 5, 5, 2, 2) };
+        params.learningRate = 1E-2;
+        params.batchSize = 1;
+        params.maxIterations = 10;
 
         long startTime = System.currentTimeMillis();
-        amten.ml.NeuralNetwork nn = new amten.ml.NeuralNetwork();
-        nn.train(xTrain, null, yTrain, numClasses, inputChannels, intputWidth, hiddenLayerParams, weightPenalty, learningRate, batchSize, iterations, threads, inputLayerDropoutRate, hiddenLayersDropoutRate, debug, normalize);
+        amten.ml.NeuralNetwork nn = new amten.ml.NeuralNetwork(params);
+        nn.train(xTrain, yTrain);
         System.out.println("Training time: " + (System.currentTimeMillis() - startTime) / 1000.0 + "s");
 
         List<Matrix> batchesX = new ArrayList<>();
         List<Matrix> batchesY = new ArrayList<>();
-        MatrixUtils.split(xTrain, yTrain, batchSize, batchesX, batchesY);
+        MatrixUtils.split(xTrain, yTrain, params.batchSize, batchesX, batchesY);
         int correct = 0;
         for (int batch = 0; batch < batchesX.size(); batch++) {
             int[] predictedClasses = nn.getPredictedClasses(batchesX.get(batch));
@@ -76,7 +65,7 @@ public class NeuralNetworkTest {
 
         batchesX = new ArrayList<>();
         batchesY = new ArrayList<>();
-        MatrixUtils.split(xCV, yCV, batchSize, batchesX, batchesY);
+        MatrixUtils.split(xCV, yCV, params.batchSize, batchesX, batchesY);
         correct = 0;
         for (int batch = 0; batch < batchesX.size(); batch++) {
             int[] predictedClasses = nn.getPredictedClasses(batchesX.get(batch));

@@ -24,27 +24,17 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class NeuralNetwork implements Serializable{
 
+    private NNParams myParams = null;
+
     private Matrix[] myThetas = null;
     private boolean mySoftmax = false;
-    private double myInputLayerDropoutRate = 0.0;
-    private double myHiddenLayersDropoutRate = 0.0;
-    private NNLayerParams[] myLayerParams = null;
-    private int myInputWidth = 0;
     private int myInputHeight = 0;
-    private int myInputChannels = 1;
-
+    private int myNumOutputs = 0;
+    private NNParams.NNLayerParams[] myLayerParams = null;
 
     private double[] myAverages = null;
     private double[] myStdDevs = null;
-    private int[] myNumCategories = null;
-    private int myNumOutputs = 0;
 
-    private int myBatchSize = 0;
-    private int myNumThreads = 0;
-
-    private double myConvergenceThreshold = 0.02;
-
-    public DataLoader myDataLoader = null;
 
     private transient final ReentrantReadWriteLock myThetasLock = new ReentrantReadWriteLock();
     private transient ExecutorService myExecutorService;
@@ -52,8 +42,11 @@ public class NeuralNetwork implements Serializable{
     /**
      * Create an empty Neural Network.
      * Use train() to generate weights.
+     *
+     * @param p The parameters of the neural network.
      */
-    public NeuralNetwork() {
+    public NeuralNetwork(NNParams p) {
+        myParams = p;
     }
 
     /**
@@ -61,62 +54,31 @@ public class NeuralNetwork implements Serializable{
      * @param x Training data, input.
      *          One row for each training example.
      *          One column for each attribute.
-     * @param numCategories Number of categories for each nominal attribute in x.
-     *                      This array should have the same length as the number of columns in x.
-     *                      For each nominal attribute, the value should be equal to the number of categories of that attribute.
-     *                      For each numeric attribute, the value should be 1.
-     *                      If numCategories is null, all attributes in x will be interpreted as numeric.
      * @param y Training data, correct output.
-     * @param numClasses Number of classes, if classification.
-     *                   1 if regression.
-     * @param inputWidth Width of the input.
-     *                   For convolution, we have to know the width/height of the input images. (Since they come flattened.)
-     *                   If inputWidth is set to zero, a quadratic image with equal width and height is presumed.
-                         If you are not using convolutions, this parameter is ignored.
-     * @param hiddenLayerParams Number of units in each hidden layer.
-     *                          Also, patch-size and pooling-size for convolutional layers.
-     * @param weightPenalty L1 weight penalty.
-     *                      Even when using dropout, it may be a good idea to have a small weight penalty, to keep weights down and avoid overflow.
-     * @param learningRate Initial learning rate.
-     *                     If 0, different learning rates will be tried to automatically find a good initial rate.
-     * @param batchSize Number of examples to use in each mini-batch.
-     * @param iterations Number of iterations (epochs) of training to perform.
-     *                   Training may be halted earlier by the user, if debug flag is set.
-     * @param threads Number of concurrent calculations.
-     *                If 0, threads will automatically be set to the number of CPU cores found.
-     * @param inputLayerDropoutRate Dropout rate of input layer.
-     *                              Typically set somewhat lower than dropout rate in hidden layer, like 0.2.
-     * @param hiddenLayersDropoutRate Dropout rate of hidden layer.
-     *                              Typically set somewhat higher than dropout rate in input layer, like 0.5.
-     * @param debug If true, training progress will be output to the console.
-     *              Also, the user will be able to halt training by pressing enter in the console.
-     * @param normalizeNumericData If true, will normalize the data in all numeric columns, by subtracting average and dividing by standard deviation.
      * @throws Exception
      */
-    public void train(Matrix x, int[] numCategories, Matrix y, int numClasses, int inputChannels, int inputWidth, NNLayerParams[] hiddenLayerParams, double weightPenalty, double learningRate, int batchSize, int iterations,
-                      int threads, double inputLayerDropoutRate, double hiddenLayersDropoutRate, boolean debug, boolean normalizeNumericData) throws Exception {
-        myNumCategories = numCategories;
-        if (myNumCategories == null) {
-            myNumCategories = new int[x.numColumns()];
-            Arrays.fill(myNumCategories, 1);
+    public void train(Matrix x, Matrix y) throws Exception {
+        if (myParams.numCategories == null) {
+            myParams.numCategories = new int[x.numColumns()];
+            Arrays.fill(myParams.numCategories, 1);
         }
-        mySoftmax = numClasses > 1;
-        myNumOutputs = numClasses > 1 ? numClasses : y.numColumns();
+        mySoftmax = myParams.numClasses > 1;
+        myNumOutputs = myParams.numClasses > 1 ? myParams.numClasses : y.numColumns();
 
         // Add null params for layer 0, which is just the input and last layer, which is just output.
-        myLayerParams = new NNLayerParams[hiddenLayerParams.length+2];
-        System.arraycopy(hiddenLayerParams, 0, myLayerParams, 1, hiddenLayerParams.length);
-        myLayerParams[myLayerParams.length-1] = new NNLayerParams(myNumOutputs);
+        myLayerParams = new NNParams.NNLayerParams[myParams.hiddenLayerParams.length+2];
+        System.arraycopy(myParams.hiddenLayerParams, 0, myLayerParams, 1, myParams.hiddenLayerParams.length);
+        myLayerParams[myLayerParams.length-1] = new NNParams.NNLayerParams(myNumOutputs);
 
-        if (normalizeNumericData) {
-            if (myDataLoader != null) {
+        if (myParams.normalizeNumericData) {
+            if (myParams.dataLoader != null) {
                 throw new Exception("With load on demand, data must be normalized before being sent to NeuralNetwork.");
             }
             x = x.copy();
             myAverages = new double[x.numColumns()];
             myStdDevs = new double[x.numColumns()];
             for (int col = 0; col < x.numColumns(); col++) {
-                if (myNumCategories[col] <= 1) {
+                if (myParams.numCategories[col] <= 1) {
                     // Normalize numeric column.
                     myAverages[col] = MatrixUtils.getAverage(x, col);
                     myStdDevs[col] = MatrixUtils.getStandardDeviation(x, col);
@@ -129,71 +91,67 @@ public class NeuralNetwork implements Serializable{
         }
 
         // Expand nominal values to groups of booleans.
-        x = MatrixUtils.expandNominalAttributes(x, myNumCategories);
+        x = MatrixUtils.expandNominalAttributes(x, myParams.numCategories);
         if (mySoftmax) {
             y = MatrixUtils.expandNominalAttributes(y, new int[] {myNumOutputs} );
         }
 
-        int inputSize = myDataLoader == null ? x.numColumns() : myDataLoader.getDataSize();
+        int inputSize = myParams.dataLoader == null ? x.numColumns() : myParams.dataLoader.getDataSize();
 
         if (myLayerParams[1].isConvolutional()) {
             // Convolutional network. Save width/height of input images.
-            myInputChannels = inputChannels > 0 ? inputChannels : 1;
-            if (inputWidth == 0) {
+            myParams.numInputChannels = myParams.numInputChannels > 0 ? myParams.numInputChannels : 1;
+            if (myParams.inputWidth == 0) {
                 // Assume input image has equal width and height.
-                myInputWidth = (int) Math.sqrt(inputSize/myInputChannels);
-                myInputHeight = (int) Math.sqrt(inputSize/myInputChannels);
+                myParams.inputWidth = (int) Math.sqrt(inputSize/myParams.numInputChannels);
+                myInputHeight = (int) Math.sqrt(inputSize/myParams.numInputChannels);
             } else {
-                myInputWidth = inputWidth;
-                myInputHeight = inputSize / (myInputChannels*myInputWidth);
+                myInputHeight = inputSize / (myParams.numInputChannels*myParams.inputWidth);
             }
         } else {
             // Non-convolutional network. Input only has one dimension (width).
-            myInputWidth = inputSize;
+            myParams.inputWidth = inputSize;
         }
 
         initThetas();
-        myInputLayerDropoutRate = inputLayerDropoutRate;
-        myHiddenLayersDropoutRate = hiddenLayersDropoutRate;
-        myBatchSize = batchSize;
         // If threads == 0, use the same number of threads as cores.
-        myNumThreads = threads > 0 ? threads : Runtime.getRuntime().availableProcessors();
-        myExecutorService = Executors.newFixedThreadPool(myNumThreads);
+        myParams.numThreads = myParams.numThreads > 0 ? myParams.numThreads : Runtime.getRuntime().availableProcessors();
+        myExecutorService = Executors.newFixedThreadPool(myParams.numThreads);
 
         Reader keyboardReader = System.console() != null ? System.console().reader() : null;
         boolean halted = false;
 
         List<Matrix> batchesX = new ArrayList<>();
         List<Matrix> batchesY = new ArrayList<>();
-        MatrixUtils.split(x, y, myBatchSize, batchesX, batchesY);
-        if (learningRate == 0.0) {
+        MatrixUtils.split(x, y, myParams.batchSize, batchesX, batchesY);
+        if (myParams.learningRate == 0.0) {
             // Auto-find initial learningRate.
-            learningRate = findInitialLearningRate(x, y, myBatchSize, weightPenalty, debug);
+            myParams.learningRate = findInitialLearningRate(x, y, myParams.batchSize, myParams.weightPenalty, myParams.debug);
         }
 
-        double cost = getCostThreaded(batchesX, batchesY, weightPenalty);
+        double cost = getCostThreaded(batchesX, batchesY, myParams.weightPenalty);
         LinkedList<Double> fiveLastCosts = new LinkedList<>();
         LinkedList<Double> tenLastCosts = new LinkedList<>();
-        if (debug) {
+        if (myParams.debug) {
             System.out.println("\n\n*** Training network. Press <enter> to halt. ***\n");
             if (mySoftmax) {
-                System.out.println("Iteration: 0" + ", Cost: " + String.format("%.3E", cost) + ", Learning rate: " + String.format("%.1E", learningRate));
+                System.out.println("Iteration: 0" + ", Cost: " + String.format("%.3E", cost) + ", Learning rate: " + String.format("%.1E", myParams.learningRate));
             } else {
-                System.out.println("Iteration: 0" + ", RMSE: " + String.format("%.3E", Math.sqrt(cost*2.0/ myNumOutputs)) + ", Learning rate: " + String.format("%.1E", learningRate));
+                System.out.println("Iteration: 0" + ", RMSE: " + String.format("%.3E", Math.sqrt(cost*2.0/ myNumOutputs)) + ", Learning rate: " + String.format("%.1E", myParams.learningRate));
             }
         }
-        for (int i = 0; i < iterations && !halted; i++) {
+        for (int i = 0; i < myParams.maxIterations && !halted; i++) {
             // Regenerate the batches each iteration, to get random samples each time.
-            MatrixUtils.split(x, y, myBatchSize, batchesX, batchesY);
-            trainOneIterationThreaded(batchesX, batchesY, learningRate, weightPenalty);
-            cost = getCostThreaded(batchesX, batchesY, weightPenalty);
+            MatrixUtils.split(x, y, myParams.batchSize, batchesX, batchesY);
+            trainOneIterationThreaded(batchesX, batchesY, myParams.learningRate, myParams.weightPenalty);
+            cost = getCostThreaded(batchesX, batchesY, myParams.weightPenalty);
 
             if (fiveLastCosts.size() == 5) {
                 // Lower learning rate if cost haven't decreased for 5 iterations.
                 double oldCost = fiveLastCosts.remove();
                 double minCost = Math.min(cost, Collections.min(fiveLastCosts));
                 if (minCost >= oldCost) {
-                    learningRate = learningRate*0.1;
+                    myParams.learningRate = myParams.learningRate*0.1;
                     fiveLastCosts.clear();
                 }
             }
@@ -201,24 +159,24 @@ public class NeuralNetwork implements Serializable{
                 double minCost = Math.min(cost, Collections.min(tenLastCosts));
                 double maxCost = Math.max(cost, Collections.max(tenLastCosts));
                 tenLastCosts.remove();
-                if ((maxCost-minCost)/minCost < myConvergenceThreshold) {
+                if ((maxCost-minCost)/minCost < myParams.convergenceThreshold) {
                     // If cost hasn't moved by more than the threshold fraction for the last 10 iterations,
                     // we declare convergence and stop training.
                     halted = true;
                 }
             }
 
-            if (debug) {
+            if (myParams.debug) {
                 if (mySoftmax) {
-                    System.out.println("Iteration: " + (i + 1) + ", Cost: " + String.format("%.3E", cost) + ", Learning rate: " + String.format("%.1E", learningRate));
+                    System.out.println("Iteration: " + (i + 1) + ", Cost: " + String.format("%.3E", cost) + ", Learning rate: " + String.format("%.1E", myParams.learningRate));
                 } else {
-                    System.out.println("Iteration: " + (i + 1) + ", RMSE: " + String.format("%.3E", Math.sqrt(cost*2.0/ myNumOutputs)) + ", Learning rate: " + String.format("%.1E", learningRate));
+                    System.out.println("Iteration: " + (i + 1) + ", RMSE: " + String.format("%.3E", Math.sqrt(cost*2.0/ myNumOutputs)) + ", Learning rate: " + String.format("%.1E", myParams.learningRate));
                 }
             }
             fiveLastCosts.add(cost);
             tenLastCosts.add(cost);
 
-            if (debug && System.in.available() > 0) {
+            if (myParams.debug && System.in.available() > 0) {
                 while (System.in.available() > 0) {
                     System.in.read();
                 }
@@ -242,24 +200,24 @@ public class NeuralNetwork implements Serializable{
         if (myAverages != null) {
             x = x.copy();
             for (int col = 0; col < x.numColumns(); col++) {
-                if (myNumCategories[col] <= 1) {
+                if (myParams.numCategories[col] <= 1) {
                     // Normalize numeric column.
                     MatrixUtils.normalizeData(x, col, myAverages[col], myStdDevs[col]);
                 }
             }
         }
         // Expand nominal values to groups of booleans.
-        x = MatrixUtils.expandNominalAttributes(x, myNumCategories);
+        x = MatrixUtils.expandNominalAttributes(x, myParams.numCategories);
 
-        if (x.numRows() > myBatchSize) {
+        if (x.numRows() > myParams.batchSize) {
             // Batch and thread calculations.
             final Matrix predictions = new Matrix(x.numRows(), myNumOutputs);
-            ExecutorService es = Executors.newFixedThreadPool(myNumThreads);
+            ExecutorService es = Executors.newFixedThreadPool(myParams.numThreads);
 
             List<Future> queuedJobs = new ArrayList<>();
-            for (int row = 0 ; row < x.numRows(); row += myBatchSize) {
+            for (int row = 0 ; row < x.numRows(); row += myParams.batchSize) {
                 final int startRow = row;
-                final int endRow = Math.min(startRow + myBatchSize - 1, x.numRows()-1);
+                final int endRow = Math.min(startRow + myParams.batchSize - 1, x.numRows()-1);
                 final Matrix batchX = x.getRows(startRow, endRow);
 
                 Runnable predictionsCalculator = new Runnable() {
@@ -344,7 +302,7 @@ public class NeuralNetwork implements Serializable{
         // Hidden layers
         for (int layer = 1; layer < numLayers; layer++) {
             if (myLayerParams[layer].isConvolutional()) {
-                int previousLayerNumFeatureMaps = layer > 1 ? myLayerParams[layer-1].numFeatures : myInputChannels;
+                int previousLayerNumFeatureMaps = layer > 1 ? myLayerParams[layer-1].numFeatures : myParams.numInputChannels;
                 int numFeatureMaps = myLayerParams[layer].numFeatures;
                 int patchSize = myLayerParams[layer].patchWidth* myLayerParams[layer].patchHeight;
                 thetas.add(createTheta(numFeatureMaps, previousLayerNumFeatureMaps*patchSize + 1));
@@ -366,10 +324,10 @@ public class NeuralNetwork implements Serializable{
     }
 
     private FeedForwardResult[] feedForward(Matrix x, Matrix[] dropoutMasks) {
-        if (myDataLoader != null) {
+        if (myParams.dataLoader != null) {
             // Load data on demand. To large dataset to fit in memory.
             try {
-                x = myDataLoader.loadData(x);
+                x = myParams.dataLoader.loadData(x);
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -415,7 +373,7 @@ public class NeuralNetwork implements Serializable{
                     // Dropout hidden nodes, if performing training with dropout.
                     ffr[layer-1].output.multElements(dropoutMasks[layer - 1], ffr[layer - 1].output);
                 } else {
-                    double dropoutRate = layer-1 == 0 ? myInputLayerDropoutRate : myHiddenLayersDropoutRate;
+                    double dropoutRate = layer-1 == 0 ? myParams.inputLayerDropoutRate : myParams.hiddenLayersDropoutRate;
                     if (dropoutRate > 0.0) {
                         // Adjust values if training was done with dropout.
                         ffr[layer-1].output.scale(1.0 - dropoutRate);
@@ -587,10 +545,10 @@ public class NeuralNetwork implements Serializable{
         for (int l = 0; l < masks.length ; l++) {
             // Don't dropout input to convolutional layers.
             if (!myLayerParams[l+1].isConvolutional()) {
-                if ((l == 0 && myInputLayerDropoutRate > 0) || (l > 0 && myHiddenLayersDropoutRate > 0)) {
+                if ((l == 0 && myParams.inputLayerDropoutRate > 0) || (l > 0 && myParams.hiddenLayersDropoutRate > 0)) {
                     int numColumns = l == 0 ? getWidth(0) : myLayerParams[l].numFeatures*getWidth(l)*getHeight(l);
                     Matrix mask = new Matrix(numExamples, numColumns);
-                    double dropoutRate = l == 0 ? myInputLayerDropoutRate : myHiddenLayersDropoutRate;
+                    double dropoutRate = l == 0 ? myParams.inputLayerDropoutRate : myParams.hiddenLayersDropoutRate;
                     for (MatrixElement me : mask) {
                         me.set(rnd.nextDouble() > dropoutRate ? 1.0 : 0.0);
                     }
@@ -613,7 +571,7 @@ public class NeuralNetwork implements Serializable{
 
             Runnable batchGradientCalculator = new Runnable() {
                 public void run() {
-                    boolean useDropout = myInputLayerDropoutRate > 0.0 || myHiddenLayersDropoutRate > 0.0;
+                    boolean useDropout = myParams.inputLayerDropoutRate > 0.0 || myParams.hiddenLayersDropoutRate > 0.0;
                     Matrix[] dropoutMasks = useDropout ? generateDropoutMasks(by.numRows()) : null;
                     myThetasLock.readLock().lock();
                     Matrix[] gradients = getGradients(bx, by, weightPenalty, dropoutMasks, batchSize);
@@ -693,7 +651,7 @@ public class NeuralNetwork implements Serializable{
             return 1;
         }
 
-        int width = myInputWidth;
+        int width = myParams.inputWidth;
         for (int l = 1; l <= layer; l++) {
             // Calc number of patch-rows next layer will have. Convolution and pooling.
             int patchWidth = myLayerParams[l].patchWidth;

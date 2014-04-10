@@ -1,9 +1,8 @@
 package weka.classifiers.functions;
 
-import amten.ml.NNLayerParams;
+import amten.ml.NNParams;
 import amten.ml.matrix.Matrix;
 import amten.ml.matrix.MatrixElement;
-import amten.ml.matrix.MatrixUtils;
 import weka.classifiers.AbstractClassifier;
 import weka.core.*;
 
@@ -25,17 +24,8 @@ import java.util.Enumeration;
 
 public class NeuralNetwork extends AbstractClassifier implements Serializable {
 
-
-    // Classifier parameters
-    private double myWeightPenalty = 1E-8;
-    private double myLearningRate = 0.0;
-    private NNLayerParams[] myHiddenLayers = { new NNLayerParams(100) };
-    private int myBatchSize = 100;
-    private int myIterations = 200;
-    private int myThreads = 0;
-    private double myInputLayerDropoutRate = 0.2;
-    private double myHiddenLayersDropoutRate = 0.5;
-    private int myInputWidth = 0;
+    // Parameters.
+    private NNParams myParams = new NNParams();
 
     // Model
     private amten.ml.NeuralNetwork myNN = null;
@@ -85,10 +75,11 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
             }
         }
 
-        int inputChannels = 1;
+        myParams.numClasses = numClasses;
+        myParams.numCategories = numCategories;
 
-        myNN = new amten.ml.NeuralNetwork();
-        myNN.train(x, numCategories, y, numClasses, inputChannels, myInputWidth, myHiddenLayers, myWeightPenalty, myLearningRate, myBatchSize, myIterations, myThreads, myInputLayerDropoutRate, myHiddenLayersDropoutRate, getDebug(), true);
+        myNN = new amten.ml.NeuralNetwork(myParams);
+        myNN.train(x, y);
     }
 
     public double[] distributionForInstance(Instance instance) throws Exception {
@@ -159,134 +150,134 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
     public void setOptions(String[] options) throws Exception {
 
         String weightPenaltyString = Utils.getOption("wp", options);
-        myWeightPenalty = weightPenaltyString.equals("") ? 0.0 : Double.parseDouble(weightPenaltyString);
+        myParams.weightPenalty = weightPenaltyString.equals("") ? 0.0 : Double.parseDouble(weightPenaltyString);
         String lrString = Utils.getOption("lr", options);
-        myLearningRate = lrString.equals("") ? 0.0 : Double.parseDouble(lrString);
+        myParams.learningRate = lrString.equals("") ? 0.0 : Double.parseDouble(lrString);
         String iterationsString = Utils.getOption('i', options);
-        myIterations = iterationsString.equals("") ? 10000 : Integer.parseInt(iterationsString);
+        myParams.maxIterations = iterationsString.equals("") ? 10000 : Integer.parseInt(iterationsString);
         String threadsString = Utils.getOption('t', options);
-        myThreads = threadsString.equals("t") ? 0 : Integer.parseInt(threadsString);
+        myParams.numThreads = threadsString.equals("t") ? 0 : Integer.parseInt(threadsString);
         String batchSizeString = Utils.getOption("bs", options);
-        myBatchSize = batchSizeString.equals("") ? 100 : Integer.parseInt(batchSizeString);
+        myParams.batchSize = batchSizeString.equals("") ? 100 : Integer.parseInt(batchSizeString);
         String hiddenLayersString = Utils.getOption("hl", options);
-        myHiddenLayers = hiddenLayersString.equals("") ? new NNLayerParams[] { new NNLayerParams(100) }  : getHiddenLayers(hiddenLayersString);
+        myParams.hiddenLayerParams = hiddenLayersString.equals("") ? new NNParams.NNLayerParams[] { new NNParams.NNLayerParams(100) }  : getHiddenLayers(hiddenLayersString);
         String inputLayerDropoutRateString = Utils.getOption("di", options);
-        myInputLayerDropoutRate = inputLayerDropoutRateString.equals("") ? 0.2 : Double.parseDouble(inputLayerDropoutRateString);
+        myParams.inputLayerDropoutRate = inputLayerDropoutRateString.equals("") ? 0.2 : Double.parseDouble(inputLayerDropoutRateString);
         String hiddenLayersDropoutRateString = Utils.getOption("dh", options);
-        myHiddenLayersDropoutRate = hiddenLayersDropoutRateString.equals("") ? 0.5 : Double.parseDouble(hiddenLayersDropoutRateString);
+        myParams.hiddenLayersDropoutRate = hiddenLayersDropoutRateString.equals("") ? 0.5 : Double.parseDouble(hiddenLayersDropoutRateString);
         String inputWidthString = Utils.getOption("iw", options);
-        myInputWidth = inputWidthString.equals("") ? 0 : Integer.parseInt(inputWidthString);
+        myParams.inputWidth = inputWidthString.equals("") ? 0 : Integer.parseInt(inputWidthString);
     }
 
     public String [] getOptions() {
         ArrayList<String> options = new ArrayList<>();
         options.add("-lr");
-        options.add(Double.toString(myLearningRate));
+        options.add(Double.toString(myParams.learningRate));
         options.add("-wp");
-        options.add(Double.toString(myWeightPenalty));
+        options.add(Double.toString(myParams.weightPenalty));
         options.add("-i");
-        options.add(Integer.toString(myIterations));
+        options.add(Integer.toString(myParams.maxIterations));
         options.add("-bs");
-        options.add(Integer.toString(myBatchSize));
+        options.add(Integer.toString(myParams.batchSize));
         options.add("-t");
-        options.add(Integer.toString(myThreads));
+        options.add(Integer.toString(myParams.numThreads));
         options.add("-hl");
-        options.add(getString(myHiddenLayers));
+        options.add(getString(myParams.hiddenLayerParams));
         options.add("-di");
-        options.add(Double.toString(myInputLayerDropoutRate));
+        options.add(Double.toString(myParams.inputLayerDropoutRate));
         options.add("-dh");
-        options.add(Double.toString(myHiddenLayersDropoutRate));
+        options.add(Double.toString(myParams.hiddenLayersDropoutRate));
         options.add("-iw");
-        options.add(Integer.toString(myInputWidth));
+        options.add(Integer.toString(myParams.inputWidth));
 
         return options.toArray(new String[options.size()]);
     }
 
     public double getWeightPenalty() {
-        return myWeightPenalty;
+        return myParams.weightPenalty;
     }
     public void setWeightPenalty(double weightPenalty) {
-        myWeightPenalty = weightPenalty;
+        myParams.weightPenalty = weightPenalty;
     }
     public String weightPenaltyTipText() {
         return "Weight penalty parameter.";
     }
 
     public String getHiddenLayers() {
-        return getString(myHiddenLayers);
+        return getString(myParams.hiddenLayerParams);
     }
     public void setHiddenLayers(String hiddenLayers) {
-        myHiddenLayers = getHiddenLayers(hiddenLayers);
+        myParams.hiddenLayerParams = getHiddenLayers(hiddenLayers);
     }
     public String hiddenLayersTipText() {
         return "Number of units in each hidden layer (comma-separated) (For convolutional layers: <num feature maps>-<patch-width>-<patch-height>-<pool-width>-<pool-height>).";
     }
 
     public int getIterations() {
-        return myIterations;
+        return myParams.maxIterations;
     }
     public void setIterations(int iterations) {
-        myIterations = iterations;
+        myParams.maxIterations = iterations;
     }
     public String iterationsTipText() {
         return "Number of training iterations over the entire data set (epochs)";
     }
 
     public double getInputLayerDropoutRate() {
-        return myInputLayerDropoutRate;
+        return myParams.inputLayerDropoutRate;
     }
     public void setInputLayerDropoutRate(double inputLayerDropoutRate) {
-        myInputLayerDropoutRate = inputLayerDropoutRate;
+        myParams.inputLayerDropoutRate = inputLayerDropoutRate;
     }
     public String inputLayerDropoutRateTipText() {
         return "Fraction of units to dropout in the input layer during training.";
     }
 
     public double getHiddenLayersDropoutRate() {
-        return myHiddenLayersDropoutRate;
+        return myParams.hiddenLayersDropoutRate;
     }
     public void setHiddenLayersDropoutRate(double hiddenLayersDropoutRate) {
-        myHiddenLayersDropoutRate = hiddenLayersDropoutRate;
+        myParams.hiddenLayersDropoutRate = hiddenLayersDropoutRate;
     }
     public String hiddenLayersDropoutRateTipText() {
         return "Fraction of units to dropout in the hidden layers during training.";
     }
 
     public int getBatchSize() {
-        return myBatchSize;
+        return myParams.batchSize;
     }
     public void setBatchSize(int batchSize) {
-        myBatchSize = batchSize;
+        myParams.batchSize = batchSize;
     }
     public String batchSizeTipText() {
         return "Number of training examples in each mini-batch (=1 recommended for convolutional networks) .";
     }
 
     public int getThreads() {
-        return myThreads;
+        return myParams.numThreads;
     }
     public void setThreads(int threads) {
-        myThreads = threads;
+        myParams.numThreads = threads;
     }
     public String threadsTipText() {
         return "The number of threads to use for training the network (0=Auto-detect)";
     }
 
     public double getLearningRate() {
-        return myLearningRate;
+        return myParams.learningRate;
     }
     public void setLearningRate(double learningRate) {
-        myLearningRate = learningRate;
+        myParams.learningRate = learningRate;
     }
     public String learningRateTipText() {
         return "Learning rate (0=Auto-detect).";
     }
 
     public int getInputWidth() {
-        return myInputWidth;
+        return myParams.inputWidth;
     }
     public void setInputWidth(int width) {
-        myInputWidth = width;
+        myParams.inputWidth = width;
     }
     public String inputWidthTipText() {
         return "Width of input image (only used for convolution) (0=Square image).";
@@ -316,9 +307,9 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
         return result;
     }
 
-    private NNLayerParams[] getHiddenLayers(String s) {
+    private NNParams.NNLayerParams[] getHiddenLayers(String s) {
         String[] stringList = s.split(",");
-        ArrayList<NNLayerParams> layerList = new ArrayList<>();
+        ArrayList<NNParams.NNLayerParams> layerList = new ArrayList<>();
         for (String layerString:stringList) {
             if (layerString.contains("-")) {
                 // Convolutional layer
@@ -329,18 +320,18 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
                     int patchHeight = Integer.parseInt(convStringList[2]);
                     int poolWidth = convStringList.length > 4 ? Integer.parseInt(convStringList[3]) : 0;
                     int poolHeight = convStringList.length > 4 ? Integer.parseInt(convStringList[4]) : 0;
-                    layerList.add(new NNLayerParams(numFeatureMaps, patchWidth, patchHeight, poolWidth, poolHeight));
+                    layerList.add(new NNParams.NNLayerParams(numFeatureMaps, patchWidth, patchHeight, poolWidth, poolHeight));
                 }
             } else if (!layerString.equals("")) {
-                layerList.add(new NNLayerParams(Integer.parseInt(layerString)));
+                layerList.add(new NNParams.NNLayerParams(Integer.parseInt(layerString)));
             }
         }
-        return layerList.toArray(new NNLayerParams[layerList.size()]);
+        return layerList.toArray(new NNParams.NNLayerParams[layerList.size()]);
     }
 
-    private String getString(NNLayerParams[] layerList) {
+    private String getString(NNParams.NNLayerParams[] layerList) {
         String s = "";
-        for (NNLayerParams layer: layerList) {
+        for (NNParams.NNLayerParams layer: layerList) {
             if (!s.equals("")) {
                 s += ",";
             }

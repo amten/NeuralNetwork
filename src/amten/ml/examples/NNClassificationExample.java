@@ -1,6 +1,6 @@
 package amten.ml.examples;
 
-import amten.ml.NNLayerParams;
+import amten.ml.NNParams;
 import amten.ml.matrix.Matrix;
 import amten.ml.matrix.MatrixUtils;
 
@@ -42,28 +42,17 @@ public class NNClassificationExample {
         Matrix xCV = dataCV.getColumns(1, -1);
         Matrix yCV = dataCV.getColumns(0, 0);
 
-        int[] numCategories = null; // Just numeric indata, no nominal attributes.
-        int numClasses = 10; // 10 digits to classify
-        int inputChannels = 1;
-        int intputWidth = 0;
-        NNLayerParams[] hiddenLayerParams = useConvolution ? new NNLayerParams[]{ new NNLayerParams(20, 5, 5, 2, 2) , new NNLayerParams(100, 5, 5, 2, 2) } :
-                                                            new NNLayerParams[] { new NNLayerParams(100) };
-        int batchSize = useConvolution ? 1 : 100;
-        int iterations = useConvolution ? 10 : 200;
-        // Learning rate 0 will autofind an initial learning rate.
-        double learningRate = useConvolution ? 1E-2 : 0;
-
-        double weightPenalty = 1E-8;
-        // Threads = 0 will autofind number of processor cores in computer.
-        int threads = 0;
-        double inputLayerDropoutRate = 0.2;
-        double hiddenLayersDropoutRate = 0.5;
-        boolean debug = true;
-        boolean normalize = true;
+        NNParams params = new NNParams();
+        params.numClasses = 10; // 10 digits to classify
+        params.hiddenLayerParams = useConvolution ? new NNParams.NNLayerParams[]{ new NNParams.NNLayerParams(20, 5, 5, 2, 2) , new NNParams.NNLayerParams(100, 5, 5, 2, 2) } :
+                                                    new NNParams.NNLayerParams[] { new NNParams.NNLayerParams(100) };
+        params.batchSize = useConvolution ? 1 : 100;
+        params.maxIterations = useConvolution ? 10 : 200;
+        params.learningRate = useConvolution ? 1E-2 : 0;
 
         long startTime = System.currentTimeMillis();
-        amten.ml.NeuralNetwork nn = new amten.ml.NeuralNetwork();
-        nn.train(xTrain, numCategories, yTrain, numClasses, inputChannels, intputWidth, hiddenLayerParams, weightPenalty, learningRate, batchSize, iterations, threads, inputLayerDropoutRate, hiddenLayersDropoutRate, debug, normalize);
+        amten.ml.NeuralNetwork nn = new amten.ml.NeuralNetwork(params);
+        nn.train(xTrain, yTrain);
         System.out.println("\nTraining time: " + String.format("%.3g", (System.currentTimeMillis() - startTime) / 1000.0) + "s");
 
         int[] predictedClasses = nn.getPredictedClasses(xTrain);
@@ -116,31 +105,17 @@ public class NNClassificationExample {
         Matrix xCV = dataCV.getColumns(1, -1);
         Matrix yCV = dataCV.getColumns(0, 0);
 
+        NNParams params = new NNParams();
         // Pclass has 3 categories
         // Sex has 2 categories
         // Embarked has 3 categories
         // The rest of the attributes are numeric (as indicated with "1").
-        int[] numCategories = {3, 2, 1, 1, 1, 1, 3};
-
-        int numClasses = 2; // 2 classes, survived/not
-        int inputChannels = 1;
-        int intputWidth = 0;
-        NNLayerParams[] hiddenLayerParams = { new NNLayerParams(100) };
-        double weightPenalty = 1E-8;
-        // Learning rate 0 will autofind an initial learning rate.
-        double learningRate = 0;
-        int batchSize = 100;
-        int iterations = 200;
-        // Threads = 0 will autofind number of processor cores in computer.
-        int threads = 0;
-        double inputLayerDropoutRate = 0.2;
-        double hiddenLayersDropoutRate = 0.5;
-        boolean debug = true;
-        boolean normalize = true;
+        params.numCategories = new int[]  {3, 2, 1, 1, 1, 1, 3};
+        params.numClasses = 2; // 2 classes, survived/not
 
         long startTime = System.currentTimeMillis();
-        amten.ml.NeuralNetwork nn = new amten.ml.NeuralNetwork();
-        nn.train(xTrain, numCategories, yTrain, numClasses, inputChannels, intputWidth, hiddenLayerParams, weightPenalty, learningRate, batchSize, iterations, threads, inputLayerDropoutRate, hiddenLayersDropoutRate, debug, normalize);
+        amten.ml.NeuralNetwork nn = new amten.ml.NeuralNetwork(params);
+        nn.train(xTrain, yTrain);
         System.out.println("\nTraining time: " + String.format("%.3g", (System.currentTimeMillis() - startTime) / 1000.0) + "s");
 
         int[] predictedClasses = nn.getPredictedClasses(xTrain);

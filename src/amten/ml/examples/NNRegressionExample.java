@@ -1,6 +1,6 @@
 package amten.ml.examples;
 
-import amten.ml.NNLayerParams;
+import amten.ml.NNParams;
 import amten.ml.matrix.Matrix;
 import amten.ml.matrix.MatrixUtils;
 
@@ -35,26 +35,12 @@ public class NNRegressionExample {
         Matrix xCV = dataCV.getColumns(0, 13);
         Matrix yCV = dataCV.getColumns(14, 14);
 
-        int[] numCategories = null; // Just numeric indata, no nominal attributes.
-        int numClasses = 1; // Regression. Numeric data out, not different classes.
-        int inputChannels = 1;
-        int intputWidth = 0;
-        NNLayerParams[] hiddenLayerParams = { new NNLayerParams(100) };
-        double weightPenalty = 1E-8;
-        // Learning rate 0 will autofind an initial learning rate.
-        double learningRate = 0;
-        int batchSize = 100;
-        int iterations = 200;
-        // Threads = 0 will autofind number of processor cores in computer.
-        int threads = 0;
-        double inputLayerDropoutRate = 0.2;
-        double hiddenLayersDropoutRate = 0.5;
-        boolean debug = true;
-        boolean normalize = true;
+        // Use default parameters; single hidden layer with 100 units.
+        NNParams params = new NNParams();
 
         long startTime = System.currentTimeMillis();
-        amten.ml.NeuralNetwork nn = new amten.ml.NeuralNetwork();
-        nn.train(xTrain, numCategories, yTrain, numClasses, inputChannels, intputWidth, hiddenLayerParams, weightPenalty, learningRate, batchSize, iterations, threads, inputLayerDropoutRate, hiddenLayersDropoutRate, debug, normalize);
+        amten.ml.NeuralNetwork nn = new amten.ml.NeuralNetwork(params);
+        nn.train(xTrain, yTrain);
         System.out.println("\nTraining time: " + String.format("%.3g", (System.currentTimeMillis() - startTime) / 1000.0) + "s");
 
         Matrix predictions = nn.getPredictions(xTrain);
