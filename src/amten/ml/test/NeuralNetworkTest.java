@@ -41,7 +41,6 @@ public class NeuralNetworkTest {
         params.numClasses = 10; // 10 digits to classify
         params.hiddenLayerParams = new NNParams.NNLayerParams[] { new NNParams.NNLayerParams(20, 5, 5, 2, 2) , new NNParams.NNLayerParams(100, 5, 5, 2, 2) };
         params.learningRate = 1E-2;
-        params.batchSize = 1;
         params.maxIterations = 10;
 
         long startTime = System.currentTimeMillis();

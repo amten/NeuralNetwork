@@ -113,6 +113,12 @@ public class NeuralNetwork implements Serializable{
             myParams.inputWidth = inputSize;
         }
 
+        if (myParams.batchSize == 0) {
+            // Auto-choose batch-size.
+            // 100 for fully connected network and 1 for convolutional network.
+            myParams.batchSize = myLayerParams[1].isConvolutional() ? 1 : 100;
+        }
+
         initThetas();
         // If threads == 0, use the same number of threads as cores.
         myParams.numThreads = myParams.numThreads > 0 ? myParams.numThreads : Runtime.getRuntime().availableProcessors();

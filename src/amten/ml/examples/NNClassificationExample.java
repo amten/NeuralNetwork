@@ -46,7 +46,6 @@ public class NNClassificationExample {
         params.numClasses = 10; // 10 digits to classify
         params.hiddenLayerParams = useConvolution ? new NNParams.NNLayerParams[]{ new NNParams.NNLayerParams(20, 5, 5, 2, 2) , new NNParams.NNLayerParams(100, 5, 5, 2, 2) } :
                                                     new NNParams.NNLayerParams[] { new NNParams.NNLayerParams(100) };
-        params.batchSize = useConvolution ? 1 : 100;
         params.maxIterations = useConvolution ? 10 : 200;
         params.learningRate = useConvolution ? 1E-2 : 0;
 

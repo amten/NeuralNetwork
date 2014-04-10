@@ -87,10 +87,11 @@ public class NNParams implements Serializable {
      * Number of examples to use in each mini-batch.
      * Batch-size 100 is a good choice for fully connected networks.
      * Batch-size 1 is a good choice for convolutional networks.
+     * If set to 0, a batch-size of 100 or 1 will be used depending on whether the network is fully connected or convolutional.
      *
-     * Default is 100.
+     * Default is 0.
      */
-    public int batchSize = 100;
+    public int batchSize = 0;
 
 
     /**

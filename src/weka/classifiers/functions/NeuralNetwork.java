@@ -250,7 +250,7 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
         myParams.batchSize = batchSize;
     }
     public String batchSizeTipText() {
-        return "Number of training examples in each mini-batch (=1 recommended for convolutional networks) .";
+        return "Number of training examples in each mini-batch (0=Auto-choose) .";
     }
 
     public int getThreads() {
