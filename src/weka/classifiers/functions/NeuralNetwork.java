@@ -123,11 +123,11 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
                 "\tLearning rate",
                 "LearningRate", 1, "-lr"));
         options.add(new Option(
-                "\tNumber of training iterations over the entire data set. (epochs)",
-                "Iterations", 1, "-i"));
+                "\tMaximum number of training iterations over the entire data set. (epochs)",
+                "MaxIterations", 1, "-mi"));
         options.add(new Option(
                 "\tNumber of threads to use for training the network.",
-                "Threads", 1, "-t"));
+                "Threads", 1, "-th"));
         options.add(new Option(
                 "\tNumber of Units in the hidden layers. (comma-separated list)\n" +
                 "e.g. \"100,100\" for two layers with 100 units each.\n" +
@@ -150,23 +150,31 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
     public void setOptions(String[] options) throws Exception {
 
         String weightPenaltyString = Utils.getOption("wp", options);
-        myParams.weightPenalty = weightPenaltyString.equals("") ? 0.0 : Double.parseDouble(weightPenaltyString);
+        myParams.weightPenalty = weightPenaltyString.equals("") ? myParams.weightPenalty : Double.parseDouble(weightPenaltyString);
+
         String lrString = Utils.getOption("lr", options);
-        myParams.learningRate = lrString.equals("") ? 0.0 : Double.parseDouble(lrString);
-        String iterationsString = Utils.getOption('i', options);
-        myParams.maxIterations = iterationsString.equals("") ? 10000 : Integer.parseInt(iterationsString);
-        String threadsString = Utils.getOption('t', options);
-        myParams.numThreads = threadsString.equals("t") ? 0 : Integer.parseInt(threadsString);
+        myParams.learningRate = lrString.equals("") ? myParams.learningRate : Double.parseDouble(lrString);
+
+        String maxIterationsString = Utils.getOption("mi", options);
+        myParams.maxIterations = maxIterationsString.equals("") ? myParams.maxIterations : Integer.parseInt(maxIterationsString);
+
+        String threadsString = Utils.getOption("th", options);
+        myParams.numThreads = threadsString.equals("") ? myParams.numThreads : Integer.parseInt(threadsString);
+
         String batchSizeString = Utils.getOption("bs", options);
-        myParams.batchSize = batchSizeString.equals("") ? 100 : Integer.parseInt(batchSizeString);
+        myParams.batchSize = batchSizeString.equals("") ? myParams.batchSize : Integer.parseInt(batchSizeString);
+
         String hiddenLayersString = Utils.getOption("hl", options);
-        myParams.hiddenLayerParams = hiddenLayersString.equals("") ? new NNParams.NNLayerParams[] { new NNParams.NNLayerParams(100) }  : getHiddenLayers(hiddenLayersString);
+        myParams.hiddenLayerParams = hiddenLayersString.equals("") ? myParams.hiddenLayerParams  : getHiddenLayers(hiddenLayersString);
+
         String inputLayerDropoutRateString = Utils.getOption("di", options);
-        myParams.inputLayerDropoutRate = inputLayerDropoutRateString.equals("") ? 0.2 : Double.parseDouble(inputLayerDropoutRateString);
+        myParams.inputLayerDropoutRate = inputLayerDropoutRateString.equals("") ? myParams.inputLayerDropoutRate : Double.parseDouble(inputLayerDropoutRateString);
+
         String hiddenLayersDropoutRateString = Utils.getOption("dh", options);
-        myParams.hiddenLayersDropoutRate = hiddenLayersDropoutRateString.equals("") ? 0.5 : Double.parseDouble(hiddenLayersDropoutRateString);
+        myParams.hiddenLayersDropoutRate = hiddenLayersDropoutRateString.equals("") ? myParams.hiddenLayersDropoutRate : Double.parseDouble(hiddenLayersDropoutRateString);
+
         String inputWidthString = Utils.getOption("iw", options);
-        myParams.inputWidth = inputWidthString.equals("") ? 0 : Integer.parseInt(inputWidthString);
+        myParams.inputWidth = inputWidthString.equals("") ? myParams.inputWidth : Integer.parseInt(inputWidthString);
     }
 
     public String [] getOptions() {
@@ -175,11 +183,11 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
         options.add(Double.toString(myParams.learningRate));
         options.add("-wp");
         options.add(Double.toString(myParams.weightPenalty));
-        options.add("-i");
+        options.add("-mi");
         options.add(Integer.toString(myParams.maxIterations));
         options.add("-bs");
         options.add(Integer.toString(myParams.batchSize));
-        options.add("-t");
+        options.add("-th");
         options.add(Integer.toString(myParams.numThreads));
         options.add("-hl");
         options.add(getString(myParams.hiddenLayerParams));
@@ -213,14 +221,14 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
         return "Number of units in each hidden layer (comma-separated) (For convolutional layers: <num feature maps>-<patch-width>-<patch-height>-<pool-width>-<pool-height>).";
     }
 
-    public int getIterations() {
+    public int getMaxIterations() {
         return myParams.maxIterations;
     }
-    public void setIterations(int iterations) {
+    public void setMaxIterations(int iterations) {
         myParams.maxIterations = iterations;
     }
-    public String iterationsTipText() {
-        return "Number of training iterations over the entire data set (epochs)";
+    public String maxIterationsTipText() {
+        return "Maximum number of training iterations over the entire data set (epochs)";
     }
 
     public double getInputLayerDropoutRate() {
@@ -357,4 +365,7 @@ public class NeuralNetwork extends AbstractClassifier implements Serializable {
                 "e.g. \"20-5-5-2-2,100-5-5-2-2\" for two convolutional layers, both with patch size 5x5 and pool size 2x2, each with 20 and 100 feature maps respectively.";
     }
 
+    public static void main(String [] argv){
+        runClassifier(new NeuralNetwork(), argv);
+    }
 }
