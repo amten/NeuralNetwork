@@ -499,7 +499,7 @@ public class NeuralNetwork implements Serializable{
                 int numFeatureMaps = myLayerParams[layer].numFeatures;
                 int patchWidth = myLayerParams[layer].patchWidth;
                 int patchHeight = myLayerParams[layer].patchHeight;
-                if (layer == numLayers-2) {
+                if (!myLayerParams[layer+1].isConvolutional()) {
                     int numPatches = getWidth(layer)*getHeight(layer);
                     delta[layer] = Convolutions.movePatchesToRows(delta[layer], numExamples, numFeatureMaps, numPatches);
                 } else {
