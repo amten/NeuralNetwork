@@ -12,7 +12,8 @@ In Weka, go to Tools/Package Manager and press the "File/URL" button. Browse to 
 **Important!** For optimal performance on Windows, you need to copy native matrix library dll-files to Wekas install dir.
 Unzip the BLAS-dlls.zip file to Wekas install dir (".../Program Files/Weka-3-7").
 
-For Linux, native matrix library files have not been tested, though it should be possible to install using instructions given [here] (https://github.com/fommil/netlib-java#linux)
+**Important!** For optimal performance on Linux, you need to install OpenBlas libraries:
+sudo apt-get install libatlas3-base libopenblas-base
 
 ### Standalone
 
@@ -25,7 +26,8 @@ Include the files NeuralNetwork.jar, lib/mtj-1.0-snapshot.jar, lib/opencsv-2.3.j
 **Important!** For optimal performance on Windows, you need to copy native matrix library dll-files to the directory where you execute your application, or any other directory in the PATH.
 Unzip the BLAS-dlls.zip to that directory.
 
-For Linux, native matrix library files have not been tested, though it should be possible to install using instructions given [here] (https://github.com/fommil/netlib-java#linux)
+**Important!** For optimal performance on Linux, you need to install OpenBlas libraries:
+sudo apt-get install libatlas3-base libopenblas-base
 
 ## Usage
 
