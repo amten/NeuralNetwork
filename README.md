@@ -9,11 +9,9 @@ Java (convolutional or fully-connected) neural network implementation with plugi
 Go to https://github.com/amten/NeuralNetwork/releases/latest to find the latest release. Download the files NeuralNetwork.zip and BLAS-dlls.zip. 
 In Weka, go to Tools/Package Manager and press the "File/URL" button. Browse to the NeuralNetwork.zip file and press "ok".
 
-**Important!** For optimal performance on Windows, you need to copy native matrix library dll-files to Wekas install dir.
-Unzip the BLAS-dlls.zip file to Wekas install dir (".../Program Files/Weka-3-7").
-
-**Important!** For optimal performance on Linux, you need to install OpenBlas libraries:
-sudo apt-get install libatlas3-base libopenblas-base
+**Important!** For optimal performance, you need to install native matrix library files.  
+Windows: Unzip the BLAS-dlls.zip file to Wekas install dir (".../Program Files/Weka-3-7").  
+Linux: sudo apt-get install libatlas3-base libopenblas-base
 
 ### Standalone
 
@@ -23,11 +21,9 @@ Go to https://github.com/amten/NeuralNetwork/releases/latest to find the latest 
 
 Include the files NeuralNetwork.jar, lib/mtj-1.0-snapshot.jar, lib/opencsv-2.3.jar in your classpath.
 
-**Important!** For optimal performance on Windows, you need to copy native matrix library dll-files to the directory where you execute your application, or any other directory in the PATH.
-Unzip the BLAS-dlls.zip to that directory.
-
-**Important!** For optimal performance on Linux, you need to install OpenBlas libraries:
-sudo apt-get install libatlas3-base libopenblas-base
+**Important!** For optimal performance, you need to install native matrix library files.  
+Windows: Unzip the BLAS-dlls.zip file to the directory where you execute your application, or any other directory in the PATH.  
+Linux: sudo apt-get install libatlas3-base libopenblas-base
 
 ## Usage
 
