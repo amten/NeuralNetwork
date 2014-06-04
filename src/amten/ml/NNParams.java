@@ -160,7 +160,7 @@ public class NNParams implements Serializable {
      *
      * Default is null.
      */
-    public DataLoader dataLoader = null;
+    public transient DataLoader dataLoader = null;
 
 
 
@@ -200,7 +200,7 @@ public class NNParams implements Serializable {
         }
 
         public boolean isPooled() {
-            return poolWidth > 1 && poolHeight > 1;
+            return poolWidth > 1 || poolHeight > 1;
         }
     }
 }
